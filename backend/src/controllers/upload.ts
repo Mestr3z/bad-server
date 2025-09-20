@@ -1,26 +1,39 @@
-import { NextFunction, Request, Response } from 'express'
-import { constants } from 'http2'
+import { Request, Response, NextFunction } from 'express'
+import { unlink } from 'fs'
+import { join, resolve } from 'path'
 import BadRequestError from '../errors/bad-request-error'
+import movingFile from '../utils/movingFile'
 
-export const uploadFile = async (
+const ALLOWED = new Set([
+    'image/png',
+    'image/jpg',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+])
+
+export async function uploadFile(
     req: Request,
     res: Response,
     next: NextFunction
-) => {
-    if (!req.file) {
-        return next(new BadRequestError('Файл не загружен'))
-    }
+) {
     try {
-        const fileName = process.env.UPLOAD_PATH
-            ? `/${process.env.UPLOAD_PATH}/${req.file.filename}`
-            : `/${req.file?.filename}`
-        return res.status(constants.HTTP_STATUS_CREATED).send({
-            fileName,
-            originalName: req.file?.originalname,
-        })
-    } catch (error) {
-        return next(error)
+        const file = req.file as Express.Multer.File | undefined
+        if (!file) return next(new BadRequestError('Файл не передан'))
+        const { fileTypeFromFile } = await import('file-type')
+        const fullPath = join(file.destination, file.filename)
+        const ft = await fileTypeFromFile(fullPath).catch(() => null)
+        if (!ft || !ALLOWED.has(ft.mime)) {
+            unlink(fullPath, () => {})
+            return next(new BadRequestError('Недопустимый тип файла'))
+        }
+        const pubBase = resolve(__dirname, '../public')
+        const tempBase = resolve(file.destination)
+        movingFile(file.filename, tempBase, pubBase)
+        return res
+            .status(201)
+            .json({ fileName: file.filename, originalName: file.originalname })
+    } catch (e) {
+        return next(e)
     }
 }
-
-export default {}

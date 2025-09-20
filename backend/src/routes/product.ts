@@ -5,17 +5,18 @@ import {
     getProducts,
     updateProduct,
 } from '../controllers/products'
-import auth, { roleGuardMiddleware } from '../middlewares/auth'
+import { auth, roleGuardMiddleware } from '../middlewares/auth'
 import {
     validateObjId,
     validateProductBody,
     validateProductUpdateBody,
+    validateSearchParams,
 } from '../middlewares/validations'
 import { Role } from '../models/user'
 
 const productRouter = Router()
 
-productRouter.get('/', getProducts)
+productRouter.get('/', validateSearchParams, getProducts)
 productRouter.post(
     '/',
     auth,

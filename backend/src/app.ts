@@ -5,39 +5,62 @@ import 'dotenv/config'
 import express, { json, urlencoded } from 'express'
 import mongoose from 'mongoose'
 import path from 'path'
-import { DB_ADDRESS } from './config'
+import helmet from 'helmet'
+import hpp from 'hpp'
+import rateLimit from 'express-rate-limit'
+import slowDown from 'express-slow-down'
+import mongoSanitize from 'express-mongo-sanitize'
+import compression from 'compression'
+import csrf from 'csurf'
+import { DB_ADDRESS, CORS_ORIGINS, PORT } from './config'
 import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
 import routes from './routes'
 
-const { PORT = 3000 } = process.env
 const app = express()
 
-app.use(cookieParser())
+const origins = (CORS_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+app.use(
+    cors({
+        origin: (origin, cb) =>
+            !origin || origins.length === 0 || origins.includes(origin)
+                ? cb(null, true)
+                : cb(new Error('CORS')),
+        credentials: true,
+    })
+)
+app.disable('x-powered-by')
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
+app.use(hpp())
+app.use(compression())
+app.use(rateLimit({ windowMs: 60_000, max: 300 }))
+app.use(slowDown({ windowMs: 60_000, delayAfter: 150, delayMs: 250 }))
+app.use(mongoSanitize())
 
-app.use(cors())
-// app.use(cors({ origin: ORIGIN_ALLOW, credentials: true }));
-// app.use(express.static(path.join(__dirname, 'public')));
+app.use(cookieParser())
+app.use(urlencoded({ extended: false }))
+app.use(json({ limit: '1mb' }))
 
 app.use(serveStatic(path.join(__dirname, 'public')))
 
-app.use(urlencoded({ extended: true }))
-app.use(json())
+const csrfProtection = csrf({ cookie: { httpOnly: true, sameSite: 'lax' } })
+app.use(csrfProtection)
+app.get('/csrf-token', (req, res) => res.json({ csrfToken: req.csrfToken() }))
 
-app.options('*', cors())
-app.use(routes)
+app.use('/api', routes)
+
 app.use(errors())
 app.use(errorHandler)
-
-// eslint-disable-next-line no-console
 
 const bootstrap = async () => {
     try {
         await mongoose.connect(DB_ADDRESS)
-        await app.listen(PORT, () => console.log('ok'))
+        await app.listen(PORT || 3000, () => {})
     } catch (error) {
         console.error(error)
     }
 }
-
 bootstrap()

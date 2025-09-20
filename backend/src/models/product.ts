@@ -1,71 +1,58 @@
 import { unlink } from 'fs'
-import mongoose, { Document } from 'mongoose'
-import { join } from 'path'
+import mongoose, { Document, UpdateQuery } from 'mongoose'
+import { join, basename, resolve } from 'path'
 
 export interface IFile {
-    fileName: string
-    originalName: string
+  fileName: string
+  originalName: string
 }
 
 export interface IProduct extends Document {
-    title: string
-    image: IFile
-    category: string
-    description: string
-    price: number
+  title: string
+  image: IFile
+  category: string
+  description: string
+  price: number
 }
 
 const cardsSchema = new mongoose.Schema<IProduct>(
-    {
-        title: {
-            type: String,
-            unique: true,
-            required: [true, 'Поле "title" должно быть заполнено'],
-            minlength: [2, 'Минимальная длина поля "title" - 2'],
-            maxlength: [30, 'Максимальная длина поля "title" - 30'],
-        },
-        image: {
-            fileName: {
-                type: String,
-                required: [true, 'Поле "image.fileName" должно быть заполнено'],
-            },
-            originalName: String,
-        },
-        category: {
-            type: String,
-            required: [true, 'Поле "category" должно быть заполнено'],
-        },
-        description: {
-            type: String,
-        },
-        price: {
-            type: Number,
-            default: null,
-        },
+  {
+    title: {
+      type: String,
+      unique: true,
+      required: [true, 'Поле "title" должно быть заполнено'],
+      minlength: [2, 'Минимальная длина поля "title" - 2'],
+      maxlength: [30, 'Максимальная длина поля "title" - 30'],
     },
-    { versionKey: false }
+    image: {
+      fileName: { type: String, required: [true, 'Поле "image.fileName" должно быть заполнено'] },
+      originalName: String,
+    },
+    category: { type: String, required: [true, 'Поле "category" должно быть заполнено'] },
+    description: { type: String },
+    price: { type: Number, default: null },
+  },
+  { versionKey: false }
 )
 
 cardsSchema.index({ title: 'text' })
 
-// Можно лучше: удалять старое изображением перед обновлением сущности
-cardsSchema.pre('findOneAndUpdate', async function deleteOldImage() {
-    // @ts-ignore
-    const updateImage = this.getUpdate().$set?.image
-    const docToUpdate = await this.model.findOne(this.getQuery())
-    if (updateImage && docToUpdate) {
-        unlink(
-            join(__dirname, `../public/${docToUpdate.image.fileName}`),
-            (err) => console.log(err)
-        )
-    }
+cardsSchema.pre('findOneAndUpdate', async function () {
+  const update = this.getUpdate() as UpdateQuery<IProduct> | null
+  if (!update) return
+  const updateImage = (update as any).$set?.image
+  if (!updateImage) return
+  const docToUpdate = await this.model.findOne(this.getQuery())
+  if (!docToUpdate?.image?.fileName) return
+  const base = resolve(__dirname, '../public')
+  const safe = join(base, basename(docToUpdate.image.fileName))
+  unlink(safe, () => {})
 })
 
-// Можно лучше: удалять файл с изображением после удаление сущности
 cardsSchema.post('findOneAndDelete', async (doc: IProduct) => {
-    unlink(join(__dirname, `../public/${doc.image.fileName}`), (err) =>
-        console.log(err)
-    )
+  const base = resolve(__dirname, '../public')
+  const safe = join(base, basename(doc.image.fileName))
+  unlink(safe, () => {})
 })
 
 export default mongoose.model<IProduct>('product', cardsSchema)

@@ -7,33 +7,34 @@ import ConflictError from '../errors/conflict-error'
 import NotFoundError from '../errors/not-found-error'
 import Product from '../models/product'
 import movingFile from '../utils/movingFile'
+import escapeRegExp from '../utils/escapeRegExp'
+import { UPLOAD_PATH, UPLOAD_PATH_TEMP } from '../config'
 
-// GET /product
 const getProducts = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { page = 1, limit = 5 } = req.query
-        const options = {
-            skip: (Number(page) - 1) * Number(limit),
-            limit: Number(limit),
-        }
-        const products = await Product.find({}, null, options)
-        const totalProducts = await Product.countDocuments({})
-        const totalPages = Math.ceil(totalProducts / Number(limit))
-        return res.send({
-            items: products,
-            pagination: {
-                totalProducts,
-                totalPages,
-                currentPage: Number(page),
-                pageSize: Number(limit),
-            },
-        })
+        const q = typeof req.query.q === 'string' ? req.query.q : ''
+        const limit = Math.min(
+            Math.max(parseInt(String(req.query.limit ?? '20'), 10), 1),
+            100
+        )
+        const offsetByParam = Math.max(
+            parseInt(String(req.query.offset ?? '0'), 10),
+            0
+        )
+        const page = Math.max(parseInt(String(req.query.page ?? '0'), 10), 0)
+        const offset = page > 0 ? (page - 1) * limit : offsetByParam
+        const filter: any = {}
+        if (q) filter.title = { $regex: escapeRegExp(q), $options: 'i' }
+        const [items, total] = await Promise.all([
+            Product.find(filter).skip(offset).limit(limit).lean(),
+            Product.countDocuments(filter),
+        ])
+        return res.send({ items, total })
     } catch (err) {
         return next(err)
     }
 }
 
-// POST /product
 const createProduct = async (
     req: Request,
     res: Response,
@@ -41,21 +42,18 @@ const createProduct = async (
 ) => {
     try {
         const { description, category, price, title, image } = req.body
-
-        // Переносим картинку из временной папки
         if (image) {
             movingFile(
                 image.fileName,
-                join(__dirname, `../public/${process.env.UPLOAD_PATH_TEMP}`),
-                join(__dirname, `../public/${process.env.UPLOAD_PATH}`)
+                join(__dirname, `../public/${UPLOAD_PATH_TEMP}`),
+                join(__dirname, `../public/${UPLOAD_PATH}`)
             )
         }
-
         const product = await Product.create({
             description,
-            image,
+            image: image || undefined,
             category,
-            price,
+            price: price ?? null,
             title,
         })
         return res.status(constants.HTTP_STATUS_CREATED).send(product)
@@ -72,8 +70,6 @@ const createProduct = async (
     }
 }
 
-// TODO: Добавить guard admin
-// PUT /product
 const updateProduct = async (
     req: Request,
     res: Response,
@@ -81,26 +77,23 @@ const updateProduct = async (
 ) => {
     try {
         const { productId } = req.params
-        const { image } = req.body
-
-        // Переносим картинку из временной папки
+        const { description, category, price, title, image } = req.body
         if (image) {
             movingFile(
                 image.fileName,
-                join(__dirname, `../public/${process.env.UPLOAD_PATH_TEMP}`),
-                join(__dirname, `../public/${process.env.UPLOAD_PATH}`)
+                join(__dirname, `../public/${UPLOAD_PATH_TEMP}`),
+                join(__dirname, `../public/${UPLOAD_PATH}`)
             )
         }
-
+        const $set: any = {}
+        if (description !== undefined) $set.description = description
+        if (category !== undefined) $set.category = category
+        if (title !== undefined) $set.title = title
+        if (price !== undefined) $set.price = price ?? null
+        if (image !== undefined) $set.image = image
         const product = await Product.findByIdAndUpdate(
             productId,
-            {
-                $set: {
-                    ...req.body,
-                    price: req.body.price ? req.body.price : null,
-                    image: req.body.image ? req.body.image : undefined,
-                },
-            },
+            { $set },
             { runValidators: true, new: true }
         ).orFail(() => new NotFoundError('Нет товара по заданному id'))
         return res.send(product)
@@ -120,8 +113,6 @@ const updateProduct = async (
     }
 }
 
-// TODO: Добавить guard admin
-// DELETE /product
 const deleteProduct = async (
     req: Request,
     res: Response,

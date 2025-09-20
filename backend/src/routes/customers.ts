@@ -5,7 +5,7 @@ import {
     getCustomers,
     updateCustomer,
 } from '../controllers/customers'
-import auth from '../middlewares/auth'
+import { auth } from '../middlewares/auth'
 
 const customerRouter = Router()
 
