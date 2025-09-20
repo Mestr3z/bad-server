@@ -19,25 +19,57 @@ import routes from './routes'
 
 const app = express()
 
-const origins = (CORS_ORIGINS || '')
+const DEFAULT_ORIGIN = 'http://localhost:5173'
+const originList = (CORS_ORIGINS || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
+
+if (!originList.includes(DEFAULT_ORIGIN)) originList.push(DEFAULT_ORIGIN)
+const allowSet = new Set(originList)
+
 app.use(
     cors({
-        origin: (origin, cb) =>
-            !origin || origins.length === 0 || origins.includes(origin)
-                ? cb(null, true)
-                : cb(new Error('CORS')),
+        origin: (origin, cb) => {
+            if (!origin) return cb(null, true)
+            if (allowSet.has(origin)) return cb(null, true)
+            return cb(new Error('CORS'))
+        },
         credentials: true,
     })
 )
+
+app.use((req, res, next) => {
+    if (req.headers.origin && allowSet.has(req.headers.origin)) {
+        if (!res.getHeader('Access-Control-Allow-Origin')) {
+            res.setHeader('Access-Control-Allow-Origin', req.headers.origin)
+        }
+        res.setHeader('Vary', 'Origin')
+    }
+    next()
+})
+
 app.disable('x-powered-by')
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
+app.use(
+    helmet({
+        crossOriginResourcePolicy: { policy: 'cross-origin' },
+        contentSecurityPolicy: false,
+    })
+)
 app.use(hpp())
 app.use(compression())
-app.use(rateLimit({ windowMs: 60_000, max: 300 }))
-app.use(slowDown({ windowMs: 60_000, delayAfter: 150, delayMs: 250 }))
+
+app.use(
+    rateLimit({
+        windowMs: 60_000,
+        max: 100,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { message: 'Too many requests' },
+    })
+)
+app.use(slowDown({ windowMs: 60_000, delayAfter: 120, delayMs: 250 }))
+
 app.use(mongoSanitize())
 
 app.use(cookieParser())
@@ -49,6 +81,7 @@ app.use(serveStatic(path.join(__dirname, 'public')))
 const csrfProtection = csrf({
     cookie: { httpOnly: true, sameSite: 'lax', secure: false, path: '/' },
 })
+
 app.get('/csrf-token', csrfProtection, (req, res) =>
     res.json({ csrfToken: req.csrfToken() })
 )
@@ -79,3 +112,5 @@ const bootstrap = async () => {
     }
 }
 bootstrap()
+
+export default app

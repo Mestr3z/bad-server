@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from 'express'
 import { Error as MongooseError } from 'mongoose'
 import BadRequestError from '../errors/bad-request-error'
 import NotFoundError from '../errors/not-found-error'
-import Order, { StatusType } from '../models/order'
+import Order, { IOrder, StatusType } from '../models/order'
 import Product, { IProduct } from '../models/product'
 import escapeRegExp from '../utils/escapeRegExp'
 
@@ -13,21 +13,6 @@ const SORT_WHITELIST = new Set([
     'status',
 ])
 
-const sanitize = (s?: string) =>
-    typeof s === 'string'
-        ? s.replace(
-              /[<>&'"]/g,
-              (c) =>
-                  ({
-                      '<': '&lt;',
-                      '>': '&gt;',
-                      '&': '&amp;',
-                      "'": '&#39;',
-                      '"': '&quot;',
-                  })[c] as string
-          )
-        : ''
-
 export const getOrders = async (
     req: Request,
     res: Response,
@@ -37,9 +22,10 @@ export const getOrders = async (
         const page = Math.max(parseInt(String(req.query.page ?? '1'), 10), 1)
         const limit = Math.min(
             Math.max(parseInt(String(req.query.limit ?? '10'), 10), 1),
-            100
+            10
         )
         const skip = (page - 1) * limit
+
         const sortFieldRaw = String(req.query.sortField ?? 'createdAt')
         const sortField = SORT_WHITELIST.has(sortFieldRaw)
             ? sortFieldRaw
@@ -167,15 +153,15 @@ export const getOrdersCurrentUser = async (
         const page = Math.max(parseInt(String(req.query.page ?? '1'), 10), 1)
         const limit = Math.min(
             Math.max(parseInt(String(req.query.limit ?? '5'), 10), 1),
-            100
+            10
         )
         const skip = (page - 1) * limit
         const search =
             typeof req.query.search === 'string' ? req.query.search : ''
 
         const match: any = { customer: userId }
-
         const basePipeline: any[] = [{ $match: match }]
+
         const searchNum = Number(search)
         const byNumber = !Number.isNaN(searchNum)
         if (search && byNumber) {
@@ -345,7 +331,7 @@ export const createOrder = async (
             payment,
             phone,
             email,
-            comment: sanitize(comment),
+            comment: comment || '',
             customer: userId,
             deliveryAddress: address,
         })
