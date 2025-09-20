@@ -1,5 +1,5 @@
 import { Request, Express } from 'express'
-import multer, { FileFilterCallback } from 'multer'
+import multer from 'multer'
 import { join, extname } from 'path'
 import { randomBytes } from 'crypto'
 
@@ -27,27 +27,14 @@ const storage = multer.diskStorage({
         file: Express.Multer.File,
         cb: FileNameCallback
     ) => {
-        const ext = extname(file.originalname).toLowerCase()
+        const ext = extname(file.originalname || '').toLowerCase()
         const name = `${Date.now()}-${randomBytes(8).toString('hex')}${ext}`
         cb(null, name)
     },
 })
 
-const types = new Set([
-    'image/png',
-    'image/jpg',
-    'image/jpeg',
-    'image/gif',
-    'image/webp',
-])
-
-const fileFilter = (
-    _req: Request,
-    file: Express.Multer.File,
-    cb: FileFilterCallback
-) => {
-    cb(null, types.has(file.mimetype))
-}
+const fileFilter: multer.Options['fileFilter'] = (_req, _file, cb) =>
+    cb(null, true)
 
 export default multer({
     storage,
