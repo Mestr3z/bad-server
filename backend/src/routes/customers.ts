@@ -7,17 +7,10 @@ import {
 } from '../controllers/customers'
 import { auth, roleGuardMiddleware } from '../middlewares/auth'
 import { Role } from '../models/user'
-import { validateUsersQuery } from '../middlewares/validations'
 
 const customerRouter = Router()
 
-customerRouter.get(
-    '/',
-    auth,
-    roleGuardMiddleware(Role.Admin),
-    validateUsersQuery,
-    getCustomers
-)
+customerRouter.get('/', auth, roleGuardMiddleware(Role.Admin), getCustomers)
 customerRouter.get(
     '/:id',
     auth,

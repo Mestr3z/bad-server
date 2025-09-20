@@ -19,9 +19,15 @@ export const getOrders = async (
     next: NextFunction
 ) => {
     try {
+        if ('search' in req.query && typeof req.query.search !== 'string') {
+            return next(new BadRequestError('Некорректный параметр поиска'))
+        }
+
         const page = Math.max(parseInt(String(req.query.page ?? '1'), 10), 1)
+
+        const limitParsed = parseInt(String(req.query.limit ?? '10'), 10)
         const limit = Math.min(
-            Math.max(parseInt(String(req.query.limit ?? '10'), 10), 1),
+            Math.max(Number.isFinite(limitParsed) ? limitParsed : 10, 1),
             10
         )
         const skip = (page - 1) * limit
@@ -34,6 +40,7 @@ export const getOrders = async (
             String(req.query.sortOrder ?? 'desc').toLowerCase() === 'asc'
                 ? 1
                 : -1
+
         const status = req.query.status ? String(req.query.status) : ''
         const totalFrom = req.query.totalAmountFrom
             ? Number(req.query.totalAmountFrom)
@@ -90,14 +97,6 @@ export const getOrders = async (
             ...basePipeline,
             {
                 $lookup: {
-                    from: 'products',
-                    localField: 'products',
-                    foreignField: '_id',
-                    as: 'products',
-                },
-            },
-            {
-                $lookup: {
                     from: 'users',
                     localField: 'customer',
                     foreignField: '_id',
@@ -149,10 +148,16 @@ export const getOrdersCurrentUser = async (
     next: NextFunction
 ) => {
     try {
+        if ('search' in req.query && typeof req.query.search !== 'string') {
+            return next(new BadRequestError('Некорректный параметр поиска'))
+        }
+
         const userId = req.user?._id
         const page = Math.max(parseInt(String(req.query.page ?? '1'), 10), 1)
+
+        const limitParsed = parseInt(String(req.query.limit ?? '5'), 10)
         const limit = Math.min(
-            Math.max(parseInt(String(req.query.limit ?? '5'), 10), 1),
+            Math.max(Number.isFinite(limitParsed) ? limitParsed : 5, 1),
             10
         )
         const skip = (page - 1) * limit
@@ -160,8 +165,8 @@ export const getOrdersCurrentUser = async (
             typeof req.query.search === 'string' ? req.query.search : ''
 
         const match: any = { customer: userId }
-        const basePipeline: any[] = [{ $match: match }]
 
+        const basePipeline: any[] = [{ $match: match }]
         const searchNum = Number(search)
         const byNumber = !Number.isNaN(searchNum)
         if (search && byNumber) {
@@ -183,14 +188,6 @@ export const getOrdersCurrentUser = async (
 
         const dataPipeline = [
             ...basePipeline,
-            {
-                $lookup: {
-                    from: 'products',
-                    localField: 'products',
-                    foreignField: '_id',
-                    as: 'products',
-                },
-            },
             {
                 $lookup: {
                     from: 'users',
