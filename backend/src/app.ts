@@ -2,7 +2,7 @@ import { errors } from 'celebrate'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import 'dotenv/config'
-import express, { json, urlencoded, type RequestHandler } from 'express'
+import express, { json, urlencoded } from 'express'
 import mongoose from 'mongoose'
 import path from 'path'
 import helmet from 'helmet'
@@ -75,7 +75,6 @@ app.use(
     })
 )
 app.use(mongoSanitize())
-
 app.use(cookieParser())
 app.use(urlencoded({ extended: false }))
 app.use(json({ limit: '1mb' }))
@@ -83,9 +82,9 @@ app.use(serveStatic(path.join(__dirname, 'public')))
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 
-const csrfProtection: RequestHandler = csrf({
+const csrfProtection = csrf({
     cookie: { httpOnly: true, sameSite: 'lax', secure: isProd, path: '/' },
-}) as unknown as RequestHandler
+}) as unknown as express.RequestHandler
 
 app.get('/csrf-token', csrfProtection, (req, res) => {
     res.json({ csrfToken: (req as any).csrfToken() })
@@ -94,14 +93,15 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
     res.json({ csrfToken: (req as any).csrfToken() })
 })
 
+app.use(routes)
 app.use('/api', routes)
+
 app.use((req, res, next) => {
     if (res.headersSent) return next()
     res.status(404).json({ message: 'Not found' })
 })
 app.use(errors())
 app.use(errorHandler)
-
 const bootstrap = async () => {
     try {
         await mongoose.connect(DB_ADDRESS)
