@@ -34,9 +34,22 @@ export async function register(
 ) {
     try {
         const { email, password, name } = req.body
-        const exists = await User.findOne({ email })
-        if (exists)
-            return next(new ConflictError('Пользователь уже существует'))
+
+        const existing = await User.findOne({ email }).select('+password')
+
+        if (existing) {
+            const ok = await (
+                await import('bcryptjs')
+            ).compare(password, existing.password)
+            if (!ok)
+                return next(
+                    new UnauthorizedError('Неправильные почта или пароль')
+                )
+            const access = existing.generateAccessToken()
+            const refresh = await existing.generateRefreshToken()
+            setTokens(res, access, refresh)
+            return res.status(200).json({ accessToken: access })
+        }
 
         const user = new User({ email, password, name })
         await user.save()
