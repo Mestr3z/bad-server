@@ -54,16 +54,18 @@ app.get('/csrf-token', csrfProtection, (req, res) =>
 )
 
 app.use((req, res, next) => {
-    const skip =
+    const isSafe =
         req.method === 'GET' ||
         req.method === 'HEAD' ||
-        req.method === 'OPTIONS' ||
-        req.path === '/csrf-token' ||
-        req.path.startsWith('/auth')
-    return skip ? next() : csrfProtection(req, res, next)
+        req.method === 'OPTIONS'
+    const isAuthOrUpload =
+        /^\/(api\/)?(auth|upload)\b/.test(req.path) ||
+        req.path === '/csrf-token'
+    return isSafe || isAuthOrUpload ? next() : csrfProtection(req, res, next)
 })
 
 app.use(routes)
+app.use('/api', routes)
 
 app.use(errors())
 app.use(errorHandler)
