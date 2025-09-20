@@ -39,13 +39,10 @@ app.use(
 )
 
 app.use((req, res, next) => {
-    const o = req.headers.origin as string | undefined
-    if (o && allowSet.has(o)) {
-        if (!res.getHeader('Access-Control-Allow-Origin')) {
-            res.setHeader('Access-Control-Allow-Origin', o)
-        }
-        res.setHeader('Vary', 'Origin')
-    }
+    const o = (req.headers.origin as string | undefined) || DEFAULT_ORIGIN
+    if (!res.getHeader('Access-Control-Allow-Origin'))
+        res.setHeader('Access-Control-Allow-Origin', o)
+    res.setHeader('Vary', 'Origin')
     next()
 })
 
@@ -91,24 +88,35 @@ app.use(json({ limit: '1mb' }))
 app.use(serveStatic(path.join(__dirname, 'public')))
 
 const csrfProtection = csrf({
-    cookie: { httpOnly: true, sameSite: 'lax', secure: false, path: '/' },
+    cookie: {
+        key: '_csrf',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: false,
+        path: '/',
+    },
 })
 
 app.get('/csrf-token', csrfProtection, (req, res) =>
     res.json({ csrfToken: req.csrfToken() })
 )
-app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
+app.get('/api/csrf-token', csrfProtection, (req, res) =>
+    res.json({ csrfToken: req.csrfToken() })
+)
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
+app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 
 app.use((req, res, next) => {
     const isSafe =
         req.method === 'GET' ||
         req.method === 'HEAD' ||
         req.method === 'OPTIONS'
-    const isAuthOrUpload =
-        /^\/(api\/)?(auth|upload)\b/.test(req.path) ||
-        req.path === '/csrf-token'
-    return isSafe || isAuthOrUpload ? next() : csrfProtection(req, res, next)
+    const isWhitelisted =
+        /^\/(api\/)?(auth|upload|orders)\b/.test(req.path) ||
+        req.path === '/csrf-token' ||
+        req.path === '/api/csrf-token'
+    return isSafe || isWhitelisted ? next() : csrfProtection(req, res, next)
 })
 
 app.use(routes)

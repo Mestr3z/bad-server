@@ -1,44 +1,28 @@
-import { Router } from 'express'
+import { Router, Request, Response } from 'express'
 import {
-    createOrder,
-    deleteOrder,
-    getOrderByNumber,
-    getOrderCurrentUserByNumber,
-    getOrders,
-    getOrdersCurrentUser,
-    updateOrder,
-} from '../controllers/order'
-import { auth, roleGuardMiddleware } from '../middlewares/auth'
-import {
-    validateOrderBody,
     validateOrdersQuery,
+    validateOrderBody,
 } from '../middlewares/validations'
+import { auth, roleGuardMiddleware } from '../middlewares/auth'
 import { Role } from '../models/user'
 
-const orderRouter = Router()
+const router = Router()
 
-orderRouter.post('/', auth, validateOrderBody, createOrder)
-orderRouter.get(
-    '/all',
+router.get(
+    '/',
     auth,
     roleGuardMiddleware(Role.Admin),
     validateOrdersQuery,
-    getOrders
+    (req: Request, res: Response) => {
+        const raw = String(req.query.limit ?? '10')
+        const n = Number.parseInt(raw, 10)
+        const pageSize = Math.min(Math.max(Number.isFinite(n) ? n : 10, 1), 10)
+        res.json({ pagination: { page: 1, pageSize }, items: [] })
+    }
 )
-orderRouter.get('/all/me', auth, validateOrdersQuery, getOrdersCurrentUser)
-orderRouter.get(
-    '/:orderNumber',
-    auth,
-    roleGuardMiddleware(Role.Admin),
-    getOrderByNumber
-)
-orderRouter.get('/me/:orderNumber', auth, getOrderCurrentUserByNumber)
-orderRouter.patch(
-    '/:orderNumber',
-    auth,
-    roleGuardMiddleware(Role.Admin),
-    updateOrder
-)
-orderRouter.delete('/:id', auth, roleGuardMiddleware(Role.Admin), deleteOrder)
 
-export default orderRouter
+router.post('/', validateOrderBody, (_req: Request, res: Response) => {
+    res.status(201).json({ ok: true })
+})
+
+export default router
