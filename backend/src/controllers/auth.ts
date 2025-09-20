@@ -37,11 +37,14 @@ export async function register(
         const exists = await User.findOne({ email })
         if (exists)
             return next(new ConflictError('Пользователь уже существует'))
+
         const user = new User({ email, password, name })
         await user.save()
+
         const access = user.generateAccessToken()
         const refresh = await user.generateRefreshToken()
         setTokens(res, access, refresh)
+
         return res.status(200).json({ accessToken: access })
     } catch (e) {
         return next(e)
@@ -52,9 +55,11 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     try {
         const { email, password } = req.body
         const user = await User.findUserByCredentials(email, password)
+
         const access = user.generateAccessToken()
         const refresh = await user.generateRefreshToken()
         setTokens(res, access, refresh)
+
         return res.status(200).json({ accessToken: access })
     } catch (e) {
         return next(e)
@@ -69,17 +74,22 @@ export async function refreshAccessToken(
     try {
         const rt = req.cookies?.refreshToken
         if (!rt) return next(new UnauthorizedError('Требуется авторизация'))
+
         const payload = jwt.verify(rt, REFRESH_TOKEN.secret) as { _id: string }
         const user = await User.findById(payload._id).orFail(
             () => new UnauthorizedError('Требуется авторизация')
         )
+
         const ok = user.tokens.some((t) => t.token === hashRT(rt))
         if (!ok) return next(new UnauthorizedError('Требуется авторизация'))
+
         user.tokens = []
         await user.save()
+
         const newRefresh = await user.generateRefreshToken()
         const newAccess = user.generateAccessToken()
         setTokens(res, newAccess, newRefresh)
+
         return res.status(200).json({ accessToken: newAccess })
     } catch {
         return next(new UnauthorizedError('Требуется авторизация'))
