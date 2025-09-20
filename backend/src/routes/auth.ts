@@ -20,6 +20,7 @@ const withUser =
 
 router.post('/register', validateAuthentication, register)
 router.post('/login', validateAuthentication, login)
+
 router.post('/token', refreshAccessToken)
 router.post('/logout', logout)
 

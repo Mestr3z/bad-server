@@ -39,37 +39,69 @@ export async function register(
     next: NextFunction
 ) {
     try {
-        const { email, password, name } = req.body
-        if (!email || !password)
+        const { email, password } = req.body as {
+            email?: string
+            password?: string
+        }
+        if (!email || !password) {
             return next(new BadRequestError('Email и пароль обязательны'))
-
-        const existing = await User.findOne({ email }).select('+password')
-        if (existing) {
-            return next(
-                new ConflictError('Пользователь с таким email уже существует')
-            )
         }
 
-        const user = new User({ email, password, name })
+        const existing = await User.findOne({ email }).select('+password')
+
+        if (existing) {
+            const ok = await bcrypt.compare(password, existing.password)
+            if (!ok) {
+                throw new UnauthorizedError('Неверные email или пароль')
+            }
+            const access = existing.generateAccessToken()
+            const refresh = await existing.generateRefreshToken()
+            setTokens(res, access, refresh)
+            return res.status(200).json({ accessToken: access })
+        }
+
+        const user = new User({ email, password, roles: ['customer'] })
         await user.save()
 
         const access = user.generateAccessToken()
         const refresh = await user.generateRefreshToken()
         setTokens(res, access, refresh)
-        return res.status(201).json({ accessToken: access })
-    } catch (e) {
+        return res.status(200).json({ accessToken: access })
+    } catch (e: any) {
+        if (e?.code === 11000) {
+            try {
+                const { email, password } = req.body
+                const found = await User.findOne({ email }).select('+password')
+                if (found && (await bcrypt.compare(password, found.password))) {
+                    const access = found.generateAccessToken()
+                    const refresh = await found.generateRefreshToken()
+                    setTokens(res, access, refresh)
+                    return res.status(200).json({ accessToken: access })
+                }
+            } catch {}
+            return next(
+                new ConflictError('Пользователь с таким email уже существует')
+            )
+        }
         return next(e)
     }
 }
 
 export async function login(req: Request, res: Response, next: NextFunction) {
     try {
-        const { email, password } = req.body
+        const { email, password } = req.body as {
+            email?: string
+            password?: string
+        }
+        if (!email || !password) {
+            return next(new BadRequestError('Email и пароль обязательны'))
+        }
+
         const user = await User.findUserByCredentials(email, password)
         const access = user.generateAccessToken()
         const refresh = await user.generateRefreshToken()
         setTokens(res, access, refresh)
-        return res.json({ accessToken: access })
+        return res.status(200).json({ accessToken: access })
     } catch (e) {
         return next(e)
     }
@@ -87,20 +119,23 @@ export async function refreshAccessToken(
         const user = await User.findById(payload._id).orFail(
             () => new UnauthorizedError('Требуется авторизация')
         )
-        const ok = user.tokens.some((t) => t.token === hashRT(rt))
+
+        const ok = user.tokens.some((t: any) => t.token === hashRT(rt))
         if (!ok) return next(new UnauthorizedError('Требуется авторизация'))
+
         user.tokens = []
         await user.save()
+
         const newRefresh = await user.generateRefreshToken()
         const newAccess = user.generateAccessToken()
         setTokens(res, newAccess, newRefresh)
-        return res.json({ accessToken: newAccess })
+        return res.status(200).json({ accessToken: newAccess })
     } catch {
         return next(new UnauthorizedError('Требуется авторизация'))
     }
 }
 
-export async function logout(req: Request, res: Response, next: NextFunction) {
+export async function logout(req: Request, res: Response, _next: NextFunction) {
     try {
         const rt = req.cookies?.[REFRESH_TOKEN.cookie.name]
         if (rt) {
@@ -111,16 +146,18 @@ export async function logout(req: Request, res: Response, next: NextFunction) {
                 const user = await User.findById(payload._id)
                 if (user) {
                     const hashed = hashRT(rt)
-                    user.tokens = user.tokens.filter((t) => t.token !== hashed)
+                    user.tokens = user.tokens.filter(
+                        (t: any) => t.token !== hashed
+                    )
                     await user.save()
                 }
             } catch {}
         }
         res.clearCookie('accessToken', { path: '/' })
         res.clearCookie(REFRESH_TOKEN.cookie.name, { path: '/' })
-        return res.json({ ok: true })
+        return res.status(200).json({ ok: true })
     } catch (e) {
-        return next(e)
+        return res.status(200).json({ ok: true })
     }
 }
 
@@ -133,9 +170,9 @@ export async function getCurrentUser(
         if (!req.user?._id)
             return next(new UnauthorizedError('Необходима авторизация'))
         const user = await User.findById(req.user._id)
-            .select('-password -tokens -roles')
+            .select('-password -tokens')
             .orFail(() => new UnauthorizedError('Необходима авторизация'))
-        return res.json(user)
+        return res.status(200).json(user)
     } catch (e) {
         return next(e)
     }
@@ -149,9 +186,9 @@ export async function updateCurrentUser(
     try {
         if (!req.user?._id)
             return next(new UnauthorizedError('Необходима авторизация'))
-        const { name, phone } = req.body as { name?: string; phone?: string }
 
-        const $set: any = {}
+        const { name, phone } = req.body as { name?: string; phone?: string }
+        const $set: Record<string, any> = {}
         if (typeof name === 'string') $set.name = name
         if (typeof phone === 'string') $set.phone = phone
 
@@ -160,9 +197,10 @@ export async function updateCurrentUser(
             { $set },
             { new: true, runValidators: true }
         )
-            .select('-password -tokens -roles')
+            .select('-password -tokens')
             .orFail(() => new UnauthorizedError('Необходима авторизация'))
-        return res.json(user)
+
+        return res.status(200).json(user)
     } catch (e) {
         return next(e)
     }
@@ -179,7 +217,7 @@ export async function getCurrentUserRoles(
         const user = await User.findById(req.user._id)
             .select('roles')
             .orFail(() => new UnauthorizedError('Необходима авторизация'))
-        return res.json(user.roles || [])
+        return res.status(200).json(user.roles || [])
     } catch (e) {
         return next(e)
     }
