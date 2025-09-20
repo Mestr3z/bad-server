@@ -13,6 +13,7 @@ const UPLOAD_DIR = path.join(PUBLIC_DIR, UPLOAD_SUBDIR)
 
 const isValidImageBytes = (buf: Buffer) => {
     if (buf.length < 12) return false
+
     if (
         buf[0] === 0x89 &&
         buf[1] === 0x50 &&
@@ -49,6 +50,22 @@ const isValidImageBytes = (buf: Buffer) => {
     )
         return true
 
+    if (
+        buf[4] === 0x66 &&
+        buf[5] === 0x74 &&
+        buf[6] === 0x79 &&
+        buf[7] === 0x70 &&
+        ((buf[8] === 0x61 &&
+            buf[9] === 0x76 &&
+            buf[10] === 0x69 &&
+            buf[11] === 0x66) || // "avif"
+            (buf[8] === 0x61 &&
+                buf[9] === 0x76 &&
+                buf[10] === 0x69 &&
+                buf[11] === 0x73)) // "avis"
+    )
+        return true
+
     return false
 }
 
@@ -62,7 +79,9 @@ const inferExt = (original: string, mimetype?: string) => {
                 ? '.gif'
                 : mimetype === 'image/webp'
                   ? '.webp'
-                  : ''
+                  : mimetype === 'image/avif'
+                    ? '.avif'
+                    : ''
     if (fromMime) return fromMime
     const ext = path.extname(original || '')
     return ext && ext.length <= 10 ? ext : ''
