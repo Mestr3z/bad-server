@@ -62,7 +62,11 @@ const userSchema = new mongoose.Schema<IUser, IUserModel, IUserMethods>(
             minlength: [6, 'Минимальная длина поля "password" - 6'],
             select: false,
         },
-        tokens: [{ token: { required: true, type: String } }],
+        // ВАЖНО: инициализируем массив токенов по умолчанию
+        tokens: {
+            type: [{ token: { type: String, required: true } }],
+            default: [],
+        },
         roles: {
             type: [String],
             enum: Object.values(Role),
@@ -111,10 +115,7 @@ userSchema.methods.generateAccessToken = function generateAccessToken() {
     return jwt.sign(
         { _id: user._id.toString(), email: user.email },
         ACCESS_TOKEN.secret,
-        {
-            expiresIn: ACCESS_TOKEN.expiry,
-            subject: user.id.toString(),
-        }
+        { expiresIn: ACCESS_TOKEN.expiry, subject: user.id.toString() }
     )
 }
 
@@ -124,15 +125,18 @@ userSchema.methods.generateRefreshToken =
         const refreshToken = jwt.sign(
             { _id: user._id.toString() },
             REFRESH_TOKEN.secret,
-            {
-                expiresIn: REFRESH_TOKEN.expiry,
-                subject: user.id.toString(),
-            }
+            { expiresIn: REFRESH_TOKEN.expiry, subject: user.id.toString() }
         )
+
         const rTknHash = crypto
             .createHmac('sha256', REFRESH_TOKEN.secret)
             .update(refreshToken)
             .digest('hex')
+
+        if (!Array.isArray(user.tokens)) {
+            user.tokens = []
+        }
+
         user.tokens.push({ token: rTknHash })
         await user.save()
         return refreshToken
@@ -146,38 +150,34 @@ userSchema.statics.findUserByCredentials = async function findByCredentials(
         .select('+password')
         .orFail(() => new UnauthorizedError('Неправильные почта или пароль'))
 
-    let ok = await bcrypt.compare(password, user.password)
-    if (!ok) {
-        const md5 = crypto.createHash('md5').update(password).digest('hex')
-        ok = md5 === user.password
-        if (ok) {
-            user.password = await bcrypt.hash(password, 12)
-            await user.save()
-        }
+    const okBcrypt = await bcrypt.compare(password, user.password)
+    if (okBcrypt) return user
+
+    const md5 = crypto.createHash('md5').update(password).digest('hex')
+    if (md5 !== user.password) {
+        throw new UnauthorizedError('Неправильные почта или пароль')
     }
-    if (!ok)
-        return Promise.reject(
-            new UnauthorizedError('Неправильные почта или пароль')
-        )
+
+    user.password = await bcrypt.hash(password, 12)
+    await user.save()
     return user
 }
 
 userSchema.methods.calculateOrderStats = async function calculateOrderStats() {
     const user = this
-    const orderStats = await mongoose
-        .model('order')
-        .aggregate([
-            { $match: { customer: user._id } },
-            {
-                $group: {
-                    _id: null,
-                    totalAmount: { $sum: '$totalAmount' },
-                    lastOrderDate: { $max: '$createdAt' },
-                    orderCount: { $sum: 1 },
-                    lastOrder: { $last: '$_id' },
-                },
+    const orderStats = await mongoose.model('order').aggregate([
+        { $match: { customer: user._id } },
+        {
+            $group: {
+                _id: null,
+                totalAmount: { $sum: '$totalAmount' },
+                lastOrderDate: { $max: '$createdAt' },
+                orderCount: { $sum: 1 },
+                lastOrder: { $last: '$_id' },
             },
-        ])
+        },
+    ])
+
     if (orderStats.length > 0) {
         const stats = orderStats[0]
         user.totalAmount = stats.totalAmount
@@ -190,6 +190,7 @@ userSchema.methods.calculateOrderStats = async function calculateOrderStats() {
         user.lastOrderDate = null
         user.lastOrder = null
     }
+
     await user.save()
 }
 

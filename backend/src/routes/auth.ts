@@ -1,34 +1,31 @@
-import { NextFunction, Request, Response } from 'express'
-import jwt from 'jsonwebtoken'
-import User, { Role } from '../models/user'
-import UnauthorizedError from '../errors/unauthorized-error'
-import ForbiddenError from '../errors/forbidden-error'
-import { ACCESS_TOKEN } from '../config'
+import { Router } from 'express'
+import { auth } from '../middlewares/auth'
+import {
+    login,
+    logout,
+    register,
+    refreshAccessToken,
+    getCurrentUser,
+    updateCurrentUser,
+    getCurrentUserRoles,
+} from '../controllers/auth'
+import {
+    validateAuthentication,
+    validateUserBody,
+} from '../middlewares/validations'
 
-declare module 'express-serve-static-core' {
-  interface Request {
-    user?: { _id: string; email?: string }
-  }
-}
+const router = Router()
 
-export default async function auth(req: Request, _res: Response, next: NextFunction) {
-  const bearer = req.header('authorization')
-  const token = req.cookies?.accessToken || (bearer?.startsWith('Bearer ') ? bearer.slice(7) : '')
-  if (!token) return next(new UnauthorizedError('Необходима авторизация'))
-  try {
-    const payload = jwt.verify(token, ACCESS_TOKEN.secret) as { _id: string; email?: string }
-    req.user = { _id: payload._id, email: payload.email }
-    return next()
-  } catch {
-    return next(new UnauthorizedError('Необходима авторизация'))
-  }
-}
+router.post('/register', validateUserBody, register)
+router.post('/login', validateAuthentication, login)
 
-export function roleGuardMiddleware(role: Role) {
-  return async (req: Request, _res: Response, next: NextFunction) => {
-    if (!req.user?._id) return next(new UnauthorizedError('Необходима авторизация'))
-    const user = await User.findById(req.user._id)
-    if (!user || !user.roles.includes(role)) return next(new ForbiddenError('Доступ запрещён'))
-    return next()
-  }
-}
+router.get('/token', refreshAccessToken)
+router.post('/token', refreshAccessToken)
+
+router.get('/logout', logout)
+
+router.get('/user', auth, getCurrentUser)
+router.patch('/user', auth, updateCurrentUser)
+router.get('/user/roles', auth, getCurrentUserRoles)
+
+export default router
