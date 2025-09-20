@@ -17,9 +17,6 @@ import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
 import routes from './routes'
 
-import orderRouter from './routes/order'
-import uploadRouter from './routes/upload'
-
 const app = express()
 const isProd = NODE_ENV === 'production'
 
@@ -100,10 +97,6 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
 
 app.use(routes)
 app.use('/api', routes)
-app.use('/orders', orderRouter)
-app.use('/api/orders', orderRouter)
-app.use('/upload', uploadRouter)
-app.use('/api/upload', uploadRouter)
 
 app.use((req, res, next) => {
     if (res.headersSent) return next()
