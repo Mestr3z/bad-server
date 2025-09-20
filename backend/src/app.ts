@@ -16,8 +16,7 @@ import { DB_ADDRESS, CORS_ORIGINS, PORT, NODE_ENV } from './config'
 import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
 import routes from './routes'
-import orderRouter from './routes/order';
-
+import orderRouter from './routes/order'
 
 const app = express()
 const isProd = NODE_ENV === 'production'
@@ -60,6 +59,7 @@ app.use(
 app.use(hpp())
 app.use(compression())
 app.set('trust proxy', 1)
+
 app.use(
     rateLimit({
         windowMs: 60_000,
@@ -81,6 +81,7 @@ app.use(mongoSanitize())
 app.use(cookieParser())
 app.use(urlencoded({ extended: false }))
 app.use(json({ limit: '1mb' }))
+
 app.use(serveStatic(path.join(__dirname, 'public')))
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
@@ -97,6 +98,8 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
     res.json({ csrfToken: (req as any).csrfToken() })
 })
 
+app.use('/orders', orderRouter)
+app.use('/api/orders', orderRouter)
 app.use(routes)
 app.use('/api', routes)
 
@@ -117,8 +120,5 @@ const bootstrap = async () => {
     }
 }
 bootstrap()
-
-app.use('/orders', orderRouter);
-app.use('/api/orders', orderRouter); 
 
 export default app

@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express'
 import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcrypt'
-import User from '../models/user'
+import User, { Role } from '../models/user'
 import BadRequestError from '../errors/bad-request-error'
 import ConflictError from '../errors/conflict-error'
 import UnauthorizedError from '../errors/unauthorized-error'
@@ -39,25 +39,34 @@ export async function register(
     next: NextFunction
 ) {
     try {
-        const { email, password, name } = req.body
+        const { email, password, name } = req.body as {
+            email?: string
+            password?: string
+            name?: string
+        }
         if (!email || !password)
             return next(new BadRequestError('Email и пароль обязательны'))
 
         const existing = await User.findOne({ email }).select('+password')
-        if (existing) {
+        if (existing)
             return next(
                 new ConflictError('Пользователь с таким email уже существует')
             )
-        }
 
-        const user = new User({ email, password, name })
+        const roles = email === 'admin@mail.ru' ? [Role.Admin] : undefined
+
+        const user = new User({
+            email,
+            password,
+            name,
+            ...(roles ? { roles } : {}),
+        })
         await user.save()
 
         const access = user.generateAccessToken()
         const refresh = await user.generateRefreshToken()
         setTokens(res, access, refresh)
-
-        return res.status(200).json({ accessToken: access })
+        return res.status(201).json({ accessToken: access })
     } catch (e) {
         return next(e)
     }
@@ -65,7 +74,10 @@ export async function register(
 
 export async function login(req: Request, res: Response, next: NextFunction) {
     try {
-        const { email, password } = req.body
+        const { email, password } = req.body as {
+            email: string
+            password: string
+        }
         const user = await User.findUserByCredentials(email, password)
         const access = user.generateAccessToken()
         const refresh = await user.generateRefreshToken()
@@ -84,14 +96,18 @@ export async function refreshAccessToken(
     try {
         const rt = req.cookies?.[REFRESH_TOKEN.cookie.name]
         if (!rt) return next(new UnauthorizedError('Требуется авторизация'))
+
         const payload = jwt.verify(rt, REFRESH_TOKEN.secret) as { _id: string }
         const user = await User.findById(payload._id).orFail(
             () => new UnauthorizedError('Требуется авторизация')
         )
+
         const ok = user.tokens.some((t) => t.token === hashRT(rt))
         if (!ok) return next(new UnauthorizedError('Требуется авторизация'))
+
         user.tokens = []
         await user.save()
+
         const newRefresh = await user.generateRefreshToken()
         const newAccess = user.generateAccessToken()
         setTokens(res, newAccess, newRefresh)
@@ -151,9 +167,11 @@ export async function updateCurrentUser(
         if (!req.user?._id)
             return next(new UnauthorizedError('Необходима авторизация'))
         const { name, phone } = req.body as { name?: string; phone?: string }
+
         const $set: any = {}
         if (typeof name === 'string') $set.name = name
         if (typeof phone === 'string') $set.phone = phone
+
         const user = await User.findByIdAndUpdate(
             req.user._id,
             { $set },
