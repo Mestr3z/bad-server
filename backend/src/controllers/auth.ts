@@ -1,10 +1,12 @@
 import { Request, Response, NextFunction } from 'express'
 import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
+import bcrypt from 'bcrypt'
 import User from '../models/user'
+import BadRequestError from '../errors/bad-request-error'
 import ConflictError from '../errors/conflict-error'
 import UnauthorizedError from '../errors/unauthorized-error'
-import { REFRESH_TOKEN } from '../config'
+import { ACCESS_TOKEN, REFRESH_TOKEN } from '../config'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -34,13 +36,23 @@ export async function register(
 ) {
     try {
         const { email, password, name } = req.body
+        if (!email || !password)
+            return next(new BadRequestError('Email и пароль обязательны'))
 
         const existing = await User.findOne({ email }).select('+password')
-
         if (existing) {
-            const ok = await (
-                await import('bcryptjs')
-            ).compare(password, existing.password)
+            let ok = await bcrypt.compare(password, existing.password)
+            if (!ok) {
+                const md5 = crypto
+                    .createHash('md5')
+                    .update(password)
+                    .digest('hex')
+                ok = md5 === existing.password
+                if (ok) {
+                    existing.password = await bcrypt.hash(password, 12)
+                    await existing.save()
+                }
+            }
             if (!ok)
                 return next(
                     new UnauthorizedError('Неправильные почта или пароль')
@@ -53,11 +65,9 @@ export async function register(
 
         const user = new User({ email, password, name })
         await user.save()
-
         const access = user.generateAccessToken()
         const refresh = await user.generateRefreshToken()
         setTokens(res, access, refresh)
-
         return res.status(200).json({ accessToken: access })
     } catch (e) {
         return next(e)
@@ -68,12 +78,10 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     try {
         const { email, password } = req.body
         const user = await User.findUserByCredentials(email, password)
-
         const access = user.generateAccessToken()
         const refresh = await user.generateRefreshToken()
         setTokens(res, access, refresh)
-
-        return res.status(200).json({ accessToken: access })
+        return res.json({ accessToken: access })
     } catch (e) {
         return next(e)
     }
@@ -87,23 +95,18 @@ export async function refreshAccessToken(
     try {
         const rt = req.cookies?.refreshToken
         if (!rt) return next(new UnauthorizedError('Требуется авторизация'))
-
         const payload = jwt.verify(rt, REFRESH_TOKEN.secret) as { _id: string }
         const user = await User.findById(payload._id).orFail(
             () => new UnauthorizedError('Требуется авторизация')
         )
-
         const ok = user.tokens.some((t) => t.token === hashRT(rt))
         if (!ok) return next(new UnauthorizedError('Требуется авторизация'))
-
         user.tokens = []
         await user.save()
-
         const newRefresh = await user.generateRefreshToken()
         const newAccess = user.generateAccessToken()
         setTokens(res, newAccess, newRefresh)
-
-        return res.status(200).json({ accessToken: newAccess })
+        return res.json({ accessToken: newAccess })
     } catch {
         return next(new UnauthorizedError('Требуется авторизация'))
     }

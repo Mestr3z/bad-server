@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
 import mongoose, { Document, HydratedDocument, Model, Types } from 'mongoose'
 import validator from 'validator'
-import bcrypt from 'bcryptjs'
+import bcrypt from 'bcrypt'
 import { ACCESS_TOKEN, REFRESH_TOKEN } from '../config'
 import UnauthorizedError from '../errors/unauthorized-error'
 
@@ -44,8 +44,8 @@ const userSchema = new mongoose.Schema<IUser, IUserModel, IUserMethods>(
         name: {
             type: String,
             default: 'Евлампий',
-            minlength: 2,
-            maxlength: 30,
+            minlength: [2, 'Минимальная длина поля "name" - 2'],
+            maxlength: [30, 'Максимальная длина поля "name" - 30'],
         },
         email: {
             type: String,
@@ -59,7 +59,7 @@ const userSchema = new mongoose.Schema<IUser, IUserModel, IUserMethods>(
         password: {
             type: String,
             required: [true, 'Поле "password" должно быть заполнено'],
-            minlength: 6,
+            minlength: [6, 'Минимальная длина поля "password" - 6'],
             select: false,
         },
         tokens: [{ token: { required: true, type: String } }],
@@ -97,15 +97,16 @@ const userSchema = new mongoose.Schema<IUser, IUserModel, IUserMethods>(
 
 userSchema.pre('save', async function hashingPassword(next) {
     try {
-        if (this.isModified('password'))
+        if (this.isModified('password')) {
             this.password = await bcrypt.hash(this.password, 12)
+        }
         next()
     } catch (error) {
         next(error as Error)
     }
 })
 
-userSchema.methods.generateAccessToken = function () {
+userSchema.methods.generateAccessToken = function generateAccessToken() {
     const user = this
     return jwt.sign(
         { _id: user._id.toString(), email: user.email },
@@ -117,33 +118,43 @@ userSchema.methods.generateAccessToken = function () {
     )
 }
 
-userSchema.methods.generateRefreshToken = async function () {
-    const user = this
-    const refreshToken = jwt.sign(
-        { _id: user._id.toString() },
-        REFRESH_TOKEN.secret,
-        {
-            expiresIn: REFRESH_TOKEN.expiry,
-            subject: user.id.toString(),
-        }
-    )
-    const rTknHash = crypto
-        .createHmac('sha256', REFRESH_TOKEN.secret)
-        .update(refreshToken)
-        .digest('hex')
-    user.tokens.push({ token: rTknHash })
-    await user.save()
-    return refreshToken
-}
+userSchema.methods.generateRefreshToken =
+    async function generateRefreshToken() {
+        const user = this
+        const refreshToken = jwt.sign(
+            { _id: user._id.toString() },
+            REFRESH_TOKEN.secret,
+            {
+                expiresIn: REFRESH_TOKEN.expiry,
+                subject: user.id.toString(),
+            }
+        )
+        const rTknHash = crypto
+            .createHmac('sha256', REFRESH_TOKEN.secret)
+            .update(refreshToken)
+            .digest('hex')
+        user.tokens.push({ token: rTknHash })
+        await user.save()
+        return refreshToken
+    }
 
-userSchema.statics.findUserByCredentials = async function (
+userSchema.statics.findUserByCredentials = async function findByCredentials(
     email: string,
     password: string
 ) {
     const user = await this.findOne({ email })
         .select('+password')
         .orFail(() => new UnauthorizedError('Неправильные почта или пароль'))
-    const ok = await bcrypt.compare(password, user.password)
+
+    let ok = await bcrypt.compare(password, user.password)
+    if (!ok) {
+        const md5 = crypto.createHash('md5').update(password).digest('hex')
+        ok = md5 === user.password
+        if (ok) {
+            user.password = await bcrypt.hash(password, 12)
+            await user.save()
+        }
+    }
     if (!ok)
         return Promise.reject(
             new UnauthorizedError('Неправильные почта или пароль')
@@ -151,7 +162,7 @@ userSchema.statics.findUserByCredentials = async function (
     return user
 }
 
-userSchema.methods.calculateOrderStats = async function () {
+userSchema.methods.calculateOrderStats = async function calculateOrderStats() {
     const user = this
     const orderStats = await mongoose
         .model('order')
@@ -167,13 +178,12 @@ userSchema.methods.calculateOrderStats = async function () {
                 },
             },
         ])
-
     if (orderStats.length > 0) {
-        const s = orderStats[0]
-        user.totalAmount = s.totalAmount
-        user.orderCount = s.orderCount
-        user.lastOrderDate = s.lastOrderDate
-        user.lastOrder = s.lastOrder
+        const stats = orderStats[0]
+        user.totalAmount = stats.totalAmount
+        user.orderCount = stats.orderCount
+        user.lastOrderDate = stats.lastOrderDate
+        user.lastOrder = stats.lastOrder
     } else {
         user.totalAmount = 0
         user.orderCount = 0
