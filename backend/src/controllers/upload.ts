@@ -4,31 +4,51 @@ import { readFile, unlink, writeFile, mkdir } from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
 
-const MIN_SIZE = 2 * 1024 
-const MAX_SIZE = 10 * 1024 * 1024 
+const MIN_SIZE = 2 * 1024
+const MAX_SIZE = 10 * 1024 * 1024
+
 const PUBLIC_DIR = path.join(__dirname, '..', 'public')
 const UPLOAD_SUBDIR = process.env.UPLOAD_PATH || 'images'
 const UPLOAD_DIR = path.join(PUBLIC_DIR, UPLOAD_SUBDIR)
 
 const isValidImageBytes = (buf: Buffer) => {
-    if (buf.length < 8) return false
+    if (buf.length < 12) return false
     if (
         buf[0] === 0x89 &&
         buf[1] === 0x50 &&
         buf[2] === 0x4e &&
-        buf[3] === 0x47
+        buf[3] === 0x47 &&
+        buf[4] === 0x0d &&
+        buf[5] === 0x0a &&
+        buf[6] === 0x1a &&
+        buf[7] === 0x0a
     )
         return true
+
     if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true
+
     if (
         buf[0] === 0x47 &&
         buf[1] === 0x49 &&
         buf[2] === 0x46 &&
-        buf[3] === 0x38
+        buf[3] === 0x38 &&
+        (buf[4] === 0x37 || buf[4] === 0x39) &&
+        buf[5] === 0x61
     )
         return true
-    const s = buf.slice(0, 5).toString().toLowerCase()
-    if (s.startsWith('<?xml') || s.startsWith('<svg')) return true
+
+    if (
+        buf[0] === 0x52 &&
+        buf[1] === 0x49 &&
+        buf[2] === 0x46 &&
+        buf[3] === 0x46 &&
+        buf[8] === 0x57 &&
+        buf[9] === 0x45 &&
+        buf[10] === 0x42 &&
+        buf[11] === 0x50
+    )
+        return true
+
     return false
 }
 
@@ -40,8 +60,8 @@ const inferExt = (original: string, mimetype?: string) => {
               ? '.jpg'
               : mimetype === 'image/gif'
                 ? '.gif'
-                : mimetype === 'image/svg+xml'
-                  ? '.svg'
+                : mimetype === 'image/webp'
+                  ? '.webp'
                   : ''
     if (fromMime) return fromMime
     const ext = path.extname(original || '')
@@ -67,6 +87,7 @@ export const uploadFile = async (
                 .status(constants.HTTP_STATUS_BAD_REQUEST)
                 .json({ message: 'Слишком маленький файл' })
         }
+
         if (file.size > MAX_SIZE) {
             if (file.path) await unlink(file.path).catch(() => {})
             return res

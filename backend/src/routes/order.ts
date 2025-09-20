@@ -1,10 +1,19 @@
-import { Router, Request, Response } from 'express'
+import { Router } from 'express'
 import {
     validateOrdersQuery,
     validateOrderBody,
 } from '../middlewares/validations'
 import { auth, roleGuardMiddleware } from '../middlewares/auth'
 import { Role } from '../models/user'
+import {
+    getOrders,
+    getOrdersCurrentUser,
+    getOrderByNumber,
+    getOrderCurrentUserByNumber,
+    createOrder,
+    updateOrder,
+    deleteOrder,
+} from '../controllers/order'
 
 const router = Router()
 
@@ -13,16 +22,27 @@ router.get(
     auth,
     roleGuardMiddleware(Role.Admin),
     validateOrdersQuery,
-    (req: Request, res: Response) => {
-        const raw = String(req.query.limit ?? '10')
-        const n = Number.parseInt(raw, 10)
-        const pageSize = Math.min(Math.max(Number.isFinite(n) ? n : 10, 1), 10)
-        res.json({ pagination: { page: 1, pageSize }, items: [] })
-    }
+    getOrders
 )
 
-router.post('/', validateOrderBody, (_req: Request, res: Response) => {
-    res.status(201).json({ ok: true })
-})
+router.get('/me', auth, getOrdersCurrentUser)
+router.get('/me/:orderNumber', auth, getOrderCurrentUserByNumber)
+
+router.get(
+    '/:orderNumber',
+    auth,
+    roleGuardMiddleware(Role.Admin),
+    getOrderByNumber
+)
+
+router.post('/', validateOrderBody, createOrder)
+
+router.patch(
+    '/:orderNumber',
+    auth,
+    roleGuardMiddleware(Role.Admin),
+    updateOrder
+)
+router.delete('/:id', auth, roleGuardMiddleware(Role.Admin), deleteOrder)
 
 export default router
