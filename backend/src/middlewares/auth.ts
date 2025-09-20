@@ -1,46 +1,50 @@
+import type { Request, RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
-import type { NextFunction, Request, Response } from 'express';
-import { ACCESS_TOKEN } from '../config';
+
 import UnauthorizedError from '../errors/unauthorized-error';
 import ForbiddenError from '../errors/forbidden-error';
-import User, { Role } from '../models/user';
-
-type JwtPayload = { _id: string; email?: string };
+import User, { type Role } from '../models/user';
+import { ACCESS_TOKEN } from '../config';
 
 export type ReqWithUser = Request & {
-    user?: {
-      _id: string;
-      email?: string;
-      roles?: ('customer' | 'admin')[];
-    };
-  };
+  user?: { _id: string; roles: Role[] };
+};
 
-export async function auth(req: ReqWithUser, _res: Response, next: NextFunction) {
-  const bearer = req.headers.authorization;
-  const token =
-    (req.cookies?.accessToken as string | undefined) ??
-    (bearer?.startsWith('Bearer ') ? bearer.slice(7) : undefined);
+const ACCESS_SECRET = ACCESS_TOKEN.secret || 'dev-access-secret';
 
-  if (!token) return next(new UnauthorizedError('Необходима авторизация'));
-
+export const auth: RequestHandler = async (req, _res, next) => {
   try {
-    const payload = jwt.verify(token, ACCESS_TOKEN.secret) as JwtPayload;
-    req.user = { _id: payload._id, ...(payload.email && { email: payload.email }) };
-    return next();
-  } catch {
-    return next(new UnauthorizedError('Необходима авторизация'));
-  }
-}
+    const header = req.headers.authorization || '';
+    const [, token] = header.split(' ');
+    if (!token) return next(new UnauthorizedError('Необходима авторизация'));
 
-export function roleGuardMiddleware(role: Role) {
-  return async (req: ReqWithUser, _res: Response, next: NextFunction) => {
-    if (!req.user?._id) return next(new UnauthorizedError('Необходима авторизация'));
+    const payload = jwt.verify(token, ACCESS_SECRET) as {
+      id?: string; _id?: string; sub?: string; roles?: Role[];
+    };
 
-    const user = await User.findById(req.user._id);
-    if (!user || !user.roles.includes(role)) {
-      return next(new ForbiddenError('Доступ запрещён'));
+    const userId = String(payload.id ?? payload._id ?? payload.sub ?? '');
+    if (!userId) return next(new UnauthorizedError('Необходима авторизация'));
+
+    let roles = Array.isArray(payload.roles) ? payload.roles : undefined;
+    if (!roles) {
+      const u = await User.findById(userId).select('roles').lean();
+      roles = (u?.roles as Role[]) ?? [];
     }
 
-    return next();
+    (req as ReqWithUser).user = { _id: userId, roles };
+    next();
+  } catch {
+    next(new UnauthorizedError('Необходима авторизация'));
+  }
+};
+
+export const roleGuardMiddleware =
+  (...allowed: Role[]): RequestHandler =>
+  (req, _res, next) => {
+    const user = (req as ReqWithUser).user;
+    if (!user?._id) return next(new UnauthorizedError('Необходима авторизация'));
+    if (!allowed.some((r) => user.roles?.includes(r))) {
+      return next(new ForbiddenError('Доступ запрещён'));
+    }
+    next();
   };
-}

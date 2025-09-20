@@ -1,48 +1,54 @@
-import { Router } from 'express'
+import { Router, type RequestHandler } from 'express';
 import {
-    validateOrdersQuery,
-    validateOrderBody,
-} from '../middlewares/validations'
-import { auth, roleGuardMiddleware } from '../middlewares/auth'
-import { Role } from '../models/user'
+  validateOrdersQuery,
+  validateOrderBody,
+} from '../middlewares/validations';
+import { auth, roleGuardMiddleware, type ReqWithUser } from '../middlewares/auth';
+import { Role } from '../models/user';
 import {
-    getOrders,
-    getOrdersCurrentUser,
-    getOrderByNumber,
-    getOrderCurrentUserByNumber,
-    createOrder,
-    updateOrder,
-    deleteOrder,
-} from '../controllers/order'
+  getOrders,
+  getOrdersCurrentUser,
+  getOrderByNumber,
+  getOrderCurrentUserByNumber,
+  createOrder,
+  updateOrder,
+  deleteOrder,
+} from '../controllers/order';
 
-const router = Router()
+const router = Router();
+
+const withUser =
+  (h: (req: ReqWithUser, ...args: any[]) => any): RequestHandler =>
+  (req, res, next) =>
+    h(req as ReqWithUser, res, next);
 
 router.get(
-    '/',
-    auth,
-    roleGuardMiddleware(Role.Admin),
-    validateOrdersQuery,
-    getOrders
-)
+  '/',
+  auth,
+  roleGuardMiddleware(Role.Admin),
+  validateOrdersQuery,
+  getOrders
+);
 
-router.get('/me', auth, getOrdersCurrentUser)
-router.get('/me/:orderNumber', auth, getOrderCurrentUserByNumber)
+router.get('/me', auth, withUser(getOrdersCurrentUser));
+router.get('/me/:orderNumber', auth, withUser(getOrderCurrentUserByNumber));
 
 router.get(
-    '/:orderNumber',
-    auth,
-    roleGuardMiddleware(Role.Admin),
-    getOrderByNumber
-)
+  '/:orderNumber',
+  auth,
+  roleGuardMiddleware(Role.Admin),
+  getOrderByNumber
+);
 
-router.post('/', validateOrderBody, createOrder)
+router.post('/', validateOrderBody, withUser(createOrder));
 
 router.patch(
-    '/:orderNumber',
-    auth,
-    roleGuardMiddleware(Role.Admin),
-    updateOrder
-)
-router.delete('/:id', auth, roleGuardMiddleware(Role.Admin), deleteOrder)
+  '/:orderNumber',
+  auth,
+  roleGuardMiddleware(Role.Admin),
+  updateOrder
+);
 
-export default router
+router.delete('/:id', auth, roleGuardMiddleware(Role.Admin), deleteOrder);
+
+export default router;

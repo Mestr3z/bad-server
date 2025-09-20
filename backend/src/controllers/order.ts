@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from 'express'
 import { Error as MongooseError } from 'mongoose'
 import BadRequestError from '../errors/bad-request-error'
 import NotFoundError from '../errors/not-found-error'
-import Order, { IOrder, StatusType } from '../models/order'
+import Order, { StatusType } from '../models/order'
 import Product, { IProduct } from '../models/product'
 import escapeRegExp from '../utils/escapeRegExp'
 import type { ReqWithUser } from '../middlewares/auth'
@@ -14,6 +14,13 @@ const SORT_WHITELIST = new Set([
     'status',
 ])
 
+const parsePositiveInt = (v: unknown, fallback: number) => {
+    const n = Number.parseInt(String(v ?? ''), 10)
+    return Number.isFinite(n) && n > 0 ? n : fallback
+}
+const clamp = (n: number, min: number, max: number) =>
+    Math.min(Math.max(n, min), max)
+
 export const getOrders = async (
     req: Request,
     res: Response,
@@ -24,13 +31,12 @@ export const getOrders = async (
             return next(new BadRequestError('Некорректный параметр поиска'))
         }
 
-        const page = Math.max(parseInt(String(req.query.page ?? '1'), 10), 1)
-
-        const limitParsed = parseInt(String(req.query.limit ?? '10'), 10)
-        const limit = Math.min(
-            Math.max(Number.isFinite(limitParsed) ? limitParsed : 10, 1),
-            10
+        const page = clamp(
+            parsePositiveInt(req.query.page, 1),
+            1,
+            Number.MAX_SAFE_INTEGER
         )
+        const limit = clamp(parsePositiveInt(req.query.limit, 10), 1, 10)
         const skip = (page - 1) * limit
 
         const sortFieldRaw = String(req.query.sortField ?? 'createdAt')
@@ -43,12 +49,14 @@ export const getOrders = async (
                 : -1
 
         const status = req.query.status ? String(req.query.status) : ''
-        const totalFrom = req.query.totalAmountFrom
-            ? Number(req.query.totalAmountFrom)
-            : undefined
-        const totalTo = req.query.totalAmountTo
-            ? Number(req.query.totalAmountTo)
-            : undefined
+        const totalFrom =
+            req.query.totalAmountFrom !== undefined
+                ? Number(req.query.totalAmountFrom)
+                : undefined
+        const totalTo =
+            req.query.totalAmountTo !== undefined
+                ? Number(req.query.totalAmountTo)
+                : undefined
         const dateFrom = req.query.orderDateFrom
             ? new Date(String(req.query.orderDateFrom))
             : undefined
@@ -58,20 +66,24 @@ export const getOrders = async (
         const search =
             typeof req.query.search === 'string' ? req.query.search : ''
 
-        const match: any = {}
+        const match: Record<string, any> = {}
         if (status && Object.values(StatusType).includes(status as StatusType))
             match.status = status
-        if (!Number.isNaN(totalFrom as number))
+        if (typeof totalFrom === 'number' && !Number.isNaN(totalFrom)) {
             match.totalAmount = {
                 ...(match.totalAmount || {}),
                 $gte: totalFrom,
             }
-        if (!Number.isNaN(totalTo as number))
+        }
+        if (typeof totalTo === 'number' && !Number.isNaN(totalTo)) {
             match.totalAmount = { ...(match.totalAmount || {}), $lte: totalTo }
-        if (dateFrom instanceof Date && !Number.isNaN(dateFrom.getTime()))
+        }
+        if (dateFrom instanceof Date && !Number.isNaN(dateFrom.getTime())) {
             match.createdAt = { ...(match.createdAt || {}), $gte: dateFrom }
-        if (dateTo instanceof Date && !Number.isNaN(dateTo.getTime()))
+        }
+        if (dateTo instanceof Date && !Number.isNaN(dateTo.getTime())) {
             match.createdAt = { ...(match.createdAt || {}), $lte: dateTo }
+        }
 
         const basePipeline: any[] = [{ $match: match }]
 
@@ -126,8 +138,9 @@ export const getOrders = async (
             Order.aggregate(dataPipeline),
             Order.aggregate(countPipeline),
         ])
+
         const totalOrders = counted[0]?.total || 0
-        const totalPages = Math.ceil(totalOrders / limit)
+        const totalPages = totalOrders > 0 ? Math.ceil(totalOrders / limit) : 0
 
         return res.status(200).json({
             orders: ordersRaw,
@@ -152,22 +165,20 @@ export const getOrdersCurrentUser = async (
         if ('search' in req.query && typeof req.query.search !== 'string') {
             return next(new BadRequestError('Некорректный параметр поиска'))
         }
-
         const userId = req.user?._id
-        const page = Math.max(parseInt(String(req.query.page ?? '1'), 10), 1)
-
-        const limitParsed = parseInt(String(req.query.limit ?? '5'), 10)
-        const limit = Math.min(
-            Math.max(Number.isFinite(limitParsed) ? limitParsed : 5, 1),
-            10
+        const page = clamp(
+            parsePositiveInt(req.query.page, 1),
+            1,
+            Number.MAX_SAFE_INTEGER
         )
+        const limit = clamp(parsePositiveInt(req.query.limit, 5), 1, 10)
         const skip = (page - 1) * limit
+
         const search =
             typeof req.query.search === 'string' ? req.query.search : ''
-
-        const match: any = { customer: userId }
-
+        const match: Record<string, any> = { customer: userId }
         const basePipeline: any[] = [{ $match: match }]
+
         const searchNum = Number(search)
         const byNumber = !Number.isNaN(searchNum)
         if (search && byNumber) {
@@ -220,15 +231,15 @@ export const getOrdersCurrentUser = async (
             Order.aggregate(countPipeline),
         ])
         const totalOrders = counted[0]?.total || 0
-        const totalPages = Math.ceil(totalOrders / limit)
+        const totalPages = totalOrders > 0 ? Math.ceil(totalOrders / limit) : 0
 
-        return res.send({
+        return res.status(200).json({
             orders,
             pagination: {
                 totalOrders,
                 totalPages,
                 currentPage: page,
-                pageSize: limit,
+                pageSize: limit, 
             },
         })
     } catch (error) {
