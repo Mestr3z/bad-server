@@ -16,6 +16,8 @@ import { DB_ADDRESS, CORS_ORIGINS, PORT, NODE_ENV } from './config'
 import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
 import routes from './routes'
+import orderRouter from './routes/order';
+
 
 const app = express()
 const isProd = NODE_ENV === 'production'
@@ -115,5 +117,8 @@ const bootstrap = async () => {
     }
 }
 bootstrap()
+
+app.use('/orders', orderRouter);
+app.use('/api/orders', orderRouter); 
 
 export default app
