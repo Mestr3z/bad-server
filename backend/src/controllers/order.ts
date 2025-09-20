@@ -5,6 +5,7 @@ import NotFoundError from '../errors/not-found-error'
 import Order, { IOrder, StatusType } from '../models/order'
 import Product, { IProduct } from '../models/product'
 import escapeRegExp from '../utils/escapeRegExp'
+import type { ReqWithUser } from '../middlewares/auth'
 
 const SORT_WHITELIST = new Set([
     'createdAt',
@@ -143,7 +144,7 @@ export const getOrders = async (
 }
 
 export const getOrdersCurrentUser = async (
-    req: Request,
+    req: ReqWithUser,
     res: Response,
     next: NextFunction
 ) => {
@@ -261,7 +262,7 @@ export const getOrderByNumber = async (
 }
 
 export const getOrderCurrentUserByNumber = async (
-    req: Request,
+    req: ReqWithUser,
     res: Response,
     next: NextFunction
 ) => {
@@ -287,7 +288,7 @@ export const getOrderCurrentUserByNumber = async (
 }
 
 export const createOrder = async (
-    req: Request,
+    req: ReqWithUser,
     res: Response,
     next: NextFunction
 ) => {

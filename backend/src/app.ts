@@ -2,7 +2,7 @@ import { errors } from 'celebrate'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import 'dotenv/config'
-import express, { json, urlencoded } from 'express'
+import express, { json, urlencoded, type RequestHandler } from 'express'
 import mongoose from 'mongoose'
 import path from 'path'
 import helmet from 'helmet'
@@ -12,12 +12,13 @@ import slowDown from 'express-slow-down'
 import mongoSanitize from 'express-mongo-sanitize'
 import compression from 'compression'
 import csrf from 'csurf'
-import { DB_ADDRESS, CORS_ORIGINS, PORT } from './config'
+import { DB_ADDRESS, CORS_ORIGINS, PORT, NODE_ENV } from './config'
 import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
 import routes from './routes'
 
 const app = express()
+const isProd = NODE_ENV === 'production'
 
 const DEFAULT_ORIGIN = 'http://localhost:5173'
 const originList = (CORS_ORIGINS || '')
@@ -40,8 +41,9 @@ app.use(
 
 app.use((req, res, next) => {
     const o = (req.headers.origin as string | undefined) || DEFAULT_ORIGIN
-    if (!res.getHeader('Access-Control-Allow-Origin'))
+    if (!res.getHeader('Access-Control-Allow-Origin')) {
         res.setHeader('Access-Control-Allow-Origin', o)
+    }
     res.setHeader('Vary', 'Origin')
     next()
 })
@@ -55,7 +57,6 @@ app.use(
 )
 app.use(hpp())
 app.use(compression())
-
 app.set('trust proxy', 1)
 
 app.use(
@@ -67,61 +68,43 @@ app.use(
         message: { message: 'Too many requests' },
     })
 )
-
 app.use(
     slowDown({
         windowMs: 60_000,
         delayAfter: 120,
-        delayMs: (used: number, req: any) => {
-            const delayAfter = req.slowDown.limit
-            return (used - delayAfter) * 250
-        },
+        delayMs: () => 250,
     })
 )
-
 app.use(mongoSanitize())
 
 app.use(cookieParser())
 app.use(urlencoded({ extended: false }))
 app.use(json({ limit: '1mb' }))
-
 app.use(serveStatic(path.join(__dirname, 'public')))
-
-const csrfProtection = csrf({
-    cookie: {
-        key: '_csrf',
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: false,
-        path: '/',
-    },
-})
-
-app.get('/csrf-token', csrfProtection, (req, res) =>
-    res.json({ csrfToken: req.csrfToken() })
-)
-app.get('/api/csrf-token', csrfProtection, (req, res) =>
-    res.json({ csrfToken: req.csrfToken() })
-)
-
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
+
+const csrfProtection: RequestHandler = csrf({
+    cookie: { httpOnly: true, sameSite: 'lax', secure: isProd, path: '/' },
+}) as unknown as RequestHandler
+
+app.get('/csrf-token', csrfProtection, (req, res) => {
+    res.json({ csrfToken: (req as any).csrfToken() })
+})
+app.get('/api/csrf-token', csrfProtection, (req, res) => {
+    res.json({ csrfToken: (req as any).csrfToken() })
+})
 
 app.use((req, res, next) => {
     const isSafe =
         req.method === 'GET' ||
         req.method === 'HEAD' ||
         req.method === 'OPTIONS'
-    const isWhitelisted =
-        /^\/(api\/)?(auth|upload|orders)\b/.test(req.path) ||
-        req.path === '/csrf-token' ||
-        req.path === '/api/csrf-token'
-    return isSafe || isWhitelisted ? next() : csrfProtection(req, res, next)
+    return isSafe ? next() : (csrfProtection as any)(req, res, next)
 })
 
 app.use(routes)
 app.use('/api', routes)
-
 app.use(errors())
 app.use(errorHandler)
 

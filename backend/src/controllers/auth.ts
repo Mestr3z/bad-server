@@ -6,9 +6,10 @@ import User from '../models/user'
 import BadRequestError from '../errors/bad-request-error'
 import ConflictError from '../errors/conflict-error'
 import UnauthorizedError from '../errors/unauthorized-error'
-import { ACCESS_TOKEN, REFRESH_TOKEN } from '../config'
+import { ACCESS_TOKEN, REFRESH_TOKEN, NODE_ENV } from '../config'
+import type { ReqWithUser } from '../middlewares/auth'
 
-const isProd = process.env.NODE_ENV === 'production'
+const isProd = NODE_ENV === 'production'
 
 const cookieOpts = {
     httpOnly: true,
@@ -26,7 +27,10 @@ function hashRT(token: string) {
 
 function setTokens(res: Response, accessToken: string, refreshToken: string) {
     res.cookie('accessToken', accessToken, cookieOpts)
-    res.cookie('refreshToken', refreshToken, cookieOpts)
+    res.cookie(REFRESH_TOKEN.cookie.name, refreshToken, {
+        ...cookieOpts,
+        maxAge: REFRESH_TOKEN.cookie.options.maxAge,
+    })
 }
 
 export async function register(
@@ -41,34 +45,18 @@ export async function register(
 
         const existing = await User.findOne({ email }).select('+password')
         if (existing) {
-            let ok = await bcrypt.compare(password, existing.password)
-            if (!ok) {
-                const md5 = crypto
-                    .createHash('md5')
-                    .update(password)
-                    .digest('hex')
-                ok = md5 === existing.password
-                if (ok) {
-                    existing.password = await bcrypt.hash(password, 12)
-                    await existing.save()
-                }
-            }
-            if (!ok)
-                return next(
-                    new UnauthorizedError('Неправильные почта или пароль')
-                )
-            const access = existing.generateAccessToken()
-            const refresh = await existing.generateRefreshToken()
-            setTokens(res, access, refresh)
-            return res.status(200).json({ accessToken: access })
+            return next(
+                new ConflictError('Пользователь с таким email уже существует')
+            )
         }
 
         const user = new User({ email, password, name })
         await user.save()
+
         const access = user.generateAccessToken()
         const refresh = await user.generateRefreshToken()
         setTokens(res, access, refresh)
-        return res.status(200).json({ accessToken: access })
+        return res.status(201).json({ accessToken: access })
     } catch (e) {
         return next(e)
     }
@@ -93,7 +81,7 @@ export async function refreshAccessToken(
     next: NextFunction
 ) {
     try {
-        const rt = req.cookies?.refreshToken
+        const rt = req.cookies?.[REFRESH_TOKEN.cookie.name]
         if (!rt) return next(new UnauthorizedError('Требуется авторизация'))
         const payload = jwt.verify(rt, REFRESH_TOKEN.secret) as { _id: string }
         const user = await User.findById(payload._id).orFail(
@@ -114,7 +102,7 @@ export async function refreshAccessToken(
 
 export async function logout(req: Request, res: Response, next: NextFunction) {
     try {
-        const rt = req.cookies?.refreshToken
+        const rt = req.cookies?.[REFRESH_TOKEN.cookie.name]
         if (rt) {
             try {
                 const payload = jwt.verify(rt, REFRESH_TOKEN.secret) as {
@@ -129,7 +117,7 @@ export async function logout(req: Request, res: Response, next: NextFunction) {
             } catch {}
         }
         res.clearCookie('accessToken', { path: '/' })
-        res.clearCookie('refreshToken', { path: '/' })
+        res.clearCookie(REFRESH_TOKEN.cookie.name, { path: '/' })
         return res.json({ ok: true })
     } catch (e) {
         return next(e)
@@ -137,16 +125,16 @@ export async function logout(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function getCurrentUser(
-    req: Request,
+    req: ReqWithUser,
     res: Response,
     next: NextFunction
 ) {
     try {
         if (!req.user?._id)
             return next(new UnauthorizedError('Необходима авторизация'))
-        const user = await User.findById(req.user._id).orFail(
-            () => new UnauthorizedError('Необходима авторизация')
-        )
+        const user = await User.findById(req.user._id)
+            .select('-password -tokens -roles')
+            .orFail(() => new UnauthorizedError('Необходима авторизация'))
         return res.json(user)
     } catch (e) {
         return next(e)
@@ -154,19 +142,26 @@ export async function getCurrentUser(
 }
 
 export async function updateCurrentUser(
-    req: Request,
+    req: ReqWithUser,
     res: Response,
     next: NextFunction
 ) {
     try {
         if (!req.user?._id)
             return next(new UnauthorizedError('Необходима авторизация'))
-        const { name, phone } = req.body
+        const { name, phone } = req.body as { name?: string; phone?: string }
+
+        const $set: any = {}
+        if (typeof name === 'string') $set.name = name
+        if (typeof phone === 'string') $set.phone = phone
+
         const user = await User.findByIdAndUpdate(
             req.user._id,
-            { $set: { name, phone } },
-            { new: true }
+            { $set },
+            { new: true, runValidators: true }
         )
+            .select('-password -tokens -roles')
+            .orFail(() => new UnauthorizedError('Необходима авторизация'))
         return res.json(user)
     } catch (e) {
         return next(e)
@@ -174,7 +169,7 @@ export async function updateCurrentUser(
 }
 
 export async function getCurrentUserRoles(
-    req: Request,
+    req: ReqWithUser,
     res: Response,
     next: NextFunction
 ) {
