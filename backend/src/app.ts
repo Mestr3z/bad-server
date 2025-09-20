@@ -28,25 +28,32 @@ const originList = (CORS_ORIGINS || '')
 if (!originList.includes(DEFAULT_ORIGIN)) originList.push(DEFAULT_ORIGIN)
 const allowSet = new Set(originList)
 
+const corsOrigin = (
+    origin: string | undefined,
+    cb: (err: any, ok?: boolean) => void
+) => {
+    if (!origin) return cb(null, true)
+    if (allowSet.has(origin)) return cb(null, true)
+    return cb(new Error('CORS'))
+}
+
 app.use(
     cors({
-        origin: (origin, cb) => {
-            if (!origin) return cb(null, true)
-            if (allowSet.has(origin)) return cb(null, true)
-            return cb(new Error('CORS'))
-        },
+        origin: corsOrigin,
         credentials: true,
     })
 )
 
 app.use((req, res, next) => {
     const o = req.headers.origin as string | undefined
-    if (o && allowSet.has(o) && !res.getHeader('Access-Control-Allow-Origin')) {
+    if (o && allowSet.has(o)) {
         res.setHeader('Access-Control-Allow-Origin', o)
         res.setHeader('Vary', 'Origin')
     }
     next()
 })
+
+app.options('*', cors({ origin: corsOrigin, credentials: true }))
 
 app.disable('x-powered-by')
 app.use(
@@ -61,8 +68,8 @@ app.use(compression())
 app.use(
     rateLimit({
         windowMs: 60_000,
-        max: 100,
-        standardHeaders: true,
+        max: 50,
+        standardHeaders: 'draft-6',
         legacyHeaders: false,
         message: { message: 'Too many requests' },
     })
@@ -80,23 +87,23 @@ const csrfProtection = csrf({
     cookie: { httpOnly: true, sameSite: 'lax', secure: false, path: '/' },
 })
 
-app.get('/csrf-token', csrfProtection, (req, res) => {
+app.get('/csrf-token', csrfProtection, (req, res) =>
     res.json({ csrfToken: req.csrfToken() })
-})
-app.get('/api/csrf-token', csrfProtection, (req, res) => {
+)
+app.get('/api/csrf-token', csrfProtection, (req, res) =>
     res.json({ csrfToken: req.csrfToken() })
-})
+)
 
 app.use((req, res, next) => {
     const isSafe =
         req.method === 'GET' ||
         req.method === 'HEAD' ||
         req.method === 'OPTIONS'
-    const isAuthOrUpload =
-        /^\/(api\/)?(auth|upload)\b/.test(req.path) ||
+    const isWhitelisted =
+        /^\/(api\/)?(auth|upload|order)\b/.test(req.path) ||
         req.path === '/csrf-token' ||
         req.path === '/api/csrf-token'
-    return isSafe || isAuthOrUpload ? next() : csrfProtection(req, res, next)
+    return isSafe || isWhitelisted ? next() : csrfProtection(req, res, next)
 })
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
@@ -106,6 +113,7 @@ app.use('/auth', authRouter)
 app.use('/api/auth', authRouter)
 
 app.use('/api', routes)
+
 app.use(errors())
 app.use(errorHandler)
 
