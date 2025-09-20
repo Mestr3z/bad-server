@@ -58,8 +58,8 @@ app.use((req, res, next) => {
         req.method === 'GET' ||
         req.method === 'HEAD' ||
         req.method === 'OPTIONS' ||
-        req.path.startsWith('/auth') ||
-        req.path.startsWith('/upload')
+        req.path === '/csrf-token' ||
+        req.path.startsWith('/auth')
     return skip ? next() : csrfProtection(req, res, next)
 })
 

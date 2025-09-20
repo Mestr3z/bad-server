@@ -2,10 +2,9 @@ import { Request, Response, NextFunction } from 'express'
 import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
 import User from '../models/user'
-import BadRequestError from '../errors/bad-request-error'
 import ConflictError from '../errors/conflict-error'
 import UnauthorizedError from '../errors/unauthorized-error'
-import { ACCESS_TOKEN, REFRESH_TOKEN } from '../config'
+import { REFRESH_TOKEN } from '../config'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -43,7 +42,7 @@ export async function register(
         const access = user.generateAccessToken()
         const refresh = await user.generateRefreshToken()
         setTokens(res, access, refresh)
-        return res.status(201).json(user)
+        return res.status(200).json({ accessToken: access })
     } catch (e) {
         return next(e)
     }
@@ -56,7 +55,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
         const access = user.generateAccessToken()
         const refresh = await user.generateRefreshToken()
         setTokens(res, access, refresh)
-        return res.json(user)
+        return res.status(200).json({ accessToken: access })
     } catch (e) {
         return next(e)
     }
@@ -81,8 +80,8 @@ export async function refreshAccessToken(
         const newRefresh = await user.generateRefreshToken()
         const newAccess = user.generateAccessToken()
         setTokens(res, newAccess, newRefresh)
-        return res.json({ ok: true })
-    } catch (e) {
+        return res.status(200).json({ accessToken: newAccess })
+    } catch {
         return next(new UnauthorizedError('Требуется авторизация'))
     }
 }
