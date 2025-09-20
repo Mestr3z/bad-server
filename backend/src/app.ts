@@ -16,7 +16,6 @@ import { DB_ADDRESS, CORS_ORIGINS, PORT } from './config'
 import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
 import routes from './routes'
-import authRouter from './routes/auth'
 
 const app = express()
 
@@ -28,18 +27,13 @@ const originList = (CORS_ORIGINS || '')
 if (!originList.includes(DEFAULT_ORIGIN)) originList.push(DEFAULT_ORIGIN)
 const allowSet = new Set(originList)
 
-const corsOrigin = (
-    origin: string | undefined,
-    cb: (err: any, ok?: boolean) => void
-) => {
-    if (!origin) return cb(null, true)
-    if (allowSet.has(origin)) return cb(null, true)
-    return cb(new Error('CORS'))
-}
-
 app.use(
     cors({
-        origin: corsOrigin,
+        origin: (origin, cb) => {
+            if (!origin) return cb(null, true)
+            if (allowSet.has(origin)) return cb(null, true)
+            return cb(new Error('CORS'))
+        },
         credentials: true,
     })
 )
@@ -47,13 +41,12 @@ app.use(
 app.use((req, res, next) => {
     const o = req.headers.origin as string | undefined
     if (o && allowSet.has(o)) {
-        res.setHeader('Access-Control-Allow-Origin', o)
+        if (!res.getHeader('Access-Control-Allow-Origin'))
+            res.setHeader('Access-Control-Allow-Origin', o)
         res.setHeader('Vary', 'Origin')
     }
     next()
 })
-
-app.options('*', cors({ origin: corsOrigin, credentials: true }))
 
 app.disable('x-powered-by')
 app.use(
@@ -65,16 +58,29 @@ app.use(
 app.use(hpp())
 app.use(compression())
 
+app.set('trust proxy', 1)
+
 app.use(
     rateLimit({
         windowMs: 60_000,
         max: 50,
-        standardHeaders: 'draft-6',
+        standardHeaders: true,
         legacyHeaders: false,
         message: { message: 'Too many requests' },
     })
 )
-app.use(slowDown({ windowMs: 60_000, delayAfter: 120, delayMs: 250 }))
+
+app.use(
+    slowDown({
+        windowMs: 60_000,
+        delayAfter: 120,
+        delayMs: (used: number, req: any) => {
+            const delayAfter = req.slowDown.limit
+            return (used - delayAfter) * 250
+        },
+    })
+)
+
 app.use(mongoSanitize())
 
 app.use(cookieParser())
@@ -90,29 +96,20 @@ const csrfProtection = csrf({
 app.get('/csrf-token', csrfProtection, (req, res) =>
     res.json({ csrfToken: req.csrfToken() })
 )
-app.get('/api/csrf-token', csrfProtection, (req, res) =>
-    res.json({ csrfToken: req.csrfToken() })
-)
+app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 
 app.use((req, res, next) => {
     const isSafe =
         req.method === 'GET' ||
         req.method === 'HEAD' ||
         req.method === 'OPTIONS'
-    const isWhitelisted =
-        /^\/(api\/)?(auth|upload|order)\b/.test(req.path) ||
-        req.path === '/csrf-token' ||
-        req.path === '/api/csrf-token'
-    return isSafe || isWhitelisted ? next() : csrfProtection(req, res, next)
+    const isAuthOrUpload =
+        /^\/(api\/)?(auth|upload)\b/.test(req.path) ||
+        req.path === '/csrf-token'
+    return isSafe || isAuthOrUpload ? next() : csrfProtection(req, res, next)
 })
 
-app.get('/health', (_req, res) => res.json({ status: 'ok' }))
-app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
-
-app.use('/auth', authRouter)
-app.use('/api/auth', authRouter)
-
-app.use('/api', routes)
+app.use(routes)
 
 app.use(errors())
 app.use(errorHandler)
