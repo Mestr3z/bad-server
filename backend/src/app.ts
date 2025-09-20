@@ -46,11 +46,24 @@ app.use(json({ limit: '1mb' }))
 
 app.use(serveStatic(path.join(__dirname, 'public')))
 
-const csrfProtection = csrf({ cookie: { httpOnly: true, sameSite: 'lax' } })
-app.use(csrfProtection)
-app.get('/csrf-token', (req, res) => res.json({ csrfToken: req.csrfToken() }))
+const csrfProtection = csrf({
+    cookie: { httpOnly: true, sameSite: 'lax', secure: false, path: '/' },
+})
+app.get('/csrf-token', csrfProtection, (req, res) =>
+    res.json({ csrfToken: req.csrfToken() })
+)
 
-app.use('/api', routes)
+app.use((req, res, next) => {
+    const skip =
+        req.method === 'GET' ||
+        req.method === 'HEAD' ||
+        req.method === 'OPTIONS' ||
+        req.path.startsWith('/auth') ||
+        req.path.startsWith('/upload')
+    return skip ? next() : csrfProtection(req, res, next)
+})
+
+app.use(routes)
 
 app.use(errors())
 app.use(errorHandler)
