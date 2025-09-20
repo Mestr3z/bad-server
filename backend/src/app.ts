@@ -94,24 +94,6 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
     res.json({ csrfToken: (req as any).csrfToken() })
 })
 
-app.use((req, res, next) => {
-    const isSafe =
-        req.method === 'GET' ||
-        req.method === 'HEAD' ||
-        req.method === 'OPTIONS'
-
-    const u = req.originalUrl || req.url || ''
-    const isWhitelisted =
-        /^\/(?:api\/)?(?:auth|upload|orders)\b/.test(u) ||
-        u === '/csrf-token' ||
-        u === '/api/csrf-token'
-
-    return isSafe || isWhitelisted
-        ? next()
-        : (csrfProtection as any)(req, res, next)
-})
-
-app.use(routes)
 app.use('/api', routes)
 app.use((req, res, next) => {
     if (res.headersSent) return next()
@@ -119,6 +101,7 @@ app.use((req, res, next) => {
 })
 app.use(errors())
 app.use(errorHandler)
+
 const bootstrap = async () => {
     try {
         await mongoose.connect(DB_ADDRESS)
