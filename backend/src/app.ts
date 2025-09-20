@@ -100,7 +100,14 @@ app.use((req, res, next) => {
         req.method === 'GET' ||
         req.method === 'HEAD' ||
         req.method === 'OPTIONS'
-    return isSafe ? next() : (csrfProtection as any)(req, res, next)
+    const isWhitelisted =
+        /^\/(api\/)?(auth|upload|orders)\b/.test(req.path) ||
+        req.path === '/csrf-token' ||
+        req.path === '/api/csrf-token'
+
+    return isSafe || isWhitelisted
+        ? next()
+        : (csrfProtection as any)(req, res, next)
 })
 
 app.use(routes)
