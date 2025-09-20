@@ -58,7 +58,6 @@ app.use(
 app.use(hpp())
 app.use(compression())
 app.set('trust proxy', 1)
-
 app.use(
     rateLimit({
         windowMs: 60_000,
@@ -100,10 +99,12 @@ app.use((req, res, next) => {
         req.method === 'GET' ||
         req.method === 'HEAD' ||
         req.method === 'OPTIONS'
+
+    const u = req.originalUrl || req.url || ''
     const isWhitelisted =
-        /^\/(api\/)?(auth|upload|orders)\b/.test(req.path) ||
-        req.path === '/csrf-token' ||
-        req.path === '/api/csrf-token'
+        /^\/(?:api\/)?(?:auth|upload|orders)\b/.test(u) ||
+        u === '/csrf-token' ||
+        u === '/api/csrf-token'
 
     return isSafe || isWhitelisted
         ? next()
@@ -112,9 +113,12 @@ app.use((req, res, next) => {
 
 app.use(routes)
 app.use('/api', routes)
+app.use((req, res, next) => {
+    if (res.headersSent) return next()
+    res.status(404).json({ message: 'Not found' })
+})
 app.use(errors())
 app.use(errorHandler)
-
 const bootstrap = async () => {
     try {
         await mongoose.connect(DB_ADDRESS)
