@@ -41,8 +41,9 @@ app.use(
 app.use((req, res, next) => {
     const o = req.headers.origin as string | undefined
     if (o && allowSet.has(o)) {
-        if (!res.getHeader('Access-Control-Allow-Origin'))
+        if (!res.getHeader('Access-Control-Allow-Origin')) {
             res.setHeader('Access-Control-Allow-Origin', o)
+        }
         res.setHeader('Vary', 'Origin')
     }
     next()
@@ -97,6 +98,7 @@ app.get('/csrf-token', csrfProtection, (req, res) =>
     res.json({ csrfToken: req.csrfToken() })
 )
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
+app.get('/health', (_req, res) => res.json({ status: 'ok' }))
 
 app.use((req, res, next) => {
     const isSafe =
@@ -110,6 +112,7 @@ app.use((req, res, next) => {
 })
 
 app.use(routes)
+app.use('/api', routes)
 
 app.use(errors())
 app.use(errorHandler)
