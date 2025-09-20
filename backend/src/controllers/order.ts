@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from 'express'
 import { Error as MongooseError } from 'mongoose'
 import BadRequestError from '../errors/bad-request-error'
 import NotFoundError from '../errors/not-found-error'
-import Order, { IOrder, StatusType } from '../models/order'
+import Order, { StatusType } from '../models/order'
 import Product, { IProduct } from '../models/product'
 import escapeRegExp from '../utils/escapeRegExp'
 
@@ -12,6 +12,21 @@ const SORT_WHITELIST = new Set([
     'orderNumber',
     'status',
 ])
+
+const sanitize = (s?: string) =>
+    typeof s === 'string'
+        ? s.replace(
+              /[<>&'"]/g,
+              (c) =>
+                  ({
+                      '<': '&lt;',
+                      '>': '&gt;',
+                      '&': '&amp;',
+                      "'": '&#39;',
+                      '"': '&quot;',
+                  })[c] as string
+          )
+        : ''
 
 export const getOrders = async (
     req: Request,
@@ -330,7 +345,7 @@ export const createOrder = async (
             payment,
             phone,
             email,
-            comment: comment || '',
+            comment: sanitize(comment),
             customer: userId,
             deliveryAddress: address,
         })
