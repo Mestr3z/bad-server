@@ -26,21 +26,23 @@ const withUser =
     (req, res, next) =>
         h(req as ReqWithUser, res, next)
 
-const normalizePagination: RequestHandler = (req, _res, next) => {
-    const q = req.query as any
+const normalizeLimit: RequestHandler = (req, _res, next) => {
+    type QueryShape = Record<string, unknown> & { limit?: unknown }
 
-    const toInt = (v: unknown, def: number) => {
-        const n = Array.isArray(v) ? Number(v[0]) : Number(v)
-        return Number.isFinite(n) && n > 0 ? Math.floor(n) : def
-    }
+    const q: QueryShape = (req.query ?? {}) as QueryShape
 
-    const page = toInt(q.page, 1)
-    let limit = toInt(q.limit, 10)
-    if (limit > 10) limit = 10
-    if (limit < 1) limit = 1
+    const rawVal: unknown = Array.isArray(q.limit) ? q.limit[0] : q.limit
 
-    q.page = String(page)
-    q.limit = String(limit)
+    let parsed: number
+    if (typeof rawVal === 'number') parsed = rawVal
+    else if (typeof rawVal === 'string') parsed = Number(rawVal)
+    else parsed = Number(rawVal as any)
+
+    const base: number =
+        Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 10
+    const clamped: number = Math.min(Math.max(base, 1), 10)
+
+    ;(req as any).query = { ...q, limit: clamped }
 
     next()
 }
@@ -49,26 +51,30 @@ router.get(
     '/',
     auth,
     roleGuardMiddleware(Role.Admin),
-    normalizePagination,
+    normalizeLimit,
     validateOrdersQuery,
     getOrders
 )
 
 router.get('/me', auth, withUser(getOrdersCurrentUser))
 router.get('/me/:orderNumber', auth, withUser(getOrderCurrentUserByNumber))
+
 router.get(
     '/:orderNumber',
     auth,
     roleGuardMiddleware(Role.Admin),
     getOrderByNumber
 )
+
 router.post('/', validateOrderBody, withUser(createOrder))
+
 router.patch(
     '/:orderNumber',
     auth,
     roleGuardMiddleware(Role.Admin),
     updateOrder
 )
+
 router.delete('/:id', auth, roleGuardMiddleware(Role.Admin), deleteOrder)
 
 export default router
