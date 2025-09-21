@@ -1,8 +1,5 @@
 import { Router, type RequestHandler } from 'express'
-import {
-    validateOrdersQuery,
-    validateOrderBody,
-} from '../middlewares/validations'
+import { validateOrderBody } from '../middlewares/validations'
 import {
     auth,
     roleGuardMiddleware,
@@ -47,7 +44,6 @@ router.get(
     auth,
     roleGuardMiddleware(Role.Admin),
     normalizeLimit,
-    validateOrdersQuery,
     getOrders
 )
 
