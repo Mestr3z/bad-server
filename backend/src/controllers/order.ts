@@ -14,21 +14,15 @@ const SORT_WHITELIST = new Set([
     'status',
 ])
 
-const first = <T = unknown>(v: unknown): T | undefined =>
-    (Array.isArray(v) ? (v[0] as T) : (v as T)) as T | undefined
-
-const parsePositiveInt = (v: unknown, fallback: number): number => {
-    const cand = first<string | number>(v)
-    const s =
-        typeof cand === 'number'
-            ? String(cand)
-            : typeof cand === 'string'
-              ? cand.trim()
-              : String(cand ?? '')
-    const n = Number.parseInt(s, 10)
-    return Number.isFinite(n) && n > 0 ? n : fallback
+const num = (v: unknown): number => {
+    const n =
+        typeof v === 'number'
+            ? v
+            : typeof v === 'string'
+              ? parseInt(v.trim(), 10)
+              : NaN
+    return Number.isFinite(n) ? n : NaN
 }
-
 const clamp = (n: number, min: number, max: number) =>
     Math.min(Math.max(n, min), max)
 
@@ -38,63 +32,48 @@ export const getOrders = async (
     next: NextFunction
 ) => {
     try {
-        let pageRaw: string | null = null
-        let limitRaw: string | null = null
-        try {
-            const u = new URL(req.originalUrl, 'http://local')
-            pageRaw = u.searchParams.get('page')
-            limitRaw = u.searchParams.get('limit')
-        } catch {
-            pageRaw = typeof req.query.page === 'string' ? req.query.page : null
-            limitRaw =
-                typeof req.query.limit === 'string' ? req.query.limit : null
-        }
-
         const page = clamp(
-            parsePositiveInt(pageRaw, 1),
+            num((req.query as any).page) || 1,
             1,
             Number.MAX_SAFE_INTEGER
         )
-        const limit = clamp(parsePositiveInt(limitRaw, 10), 1, 10)
+        const limit = clamp(num((req.query as any).limit) || 10, 1, 10)
         const skip = (page - 1) * limit
 
-        const sortFieldRaw = String(first(req.query.sortField) ?? 'createdAt')
+        const sortFieldRaw = String((req.query as any).sortField ?? 'createdAt')
         const sortField = SORT_WHITELIST.has(sortFieldRaw)
             ? sortFieldRaw
             : 'createdAt'
         const sortOrder =
-            String(first(req.query.sortOrder) ?? 'desc').toLowerCase() === 'asc'
+            String((req.query as any).sortOrder ?? 'desc').toLowerCase() ===
+            'asc'
                 ? 1
                 : -1
 
-        const status = req.query.status ? String(first(req.query.status)) : ''
+        const status = (req.query as any).status
+            ? String((req.query as any).status)
+            : ''
 
-        const tf = first<string | number>(req.query.totalAmountFrom)
-        const tt = first<string | number>(req.query.totalAmountTo)
-        const totalFrom =
-            tf !== undefined && tf !== null && !Number.isNaN(Number(tf))
-                ? Number(tf)
-                : undefined
-        const totalTo =
-            tt !== undefined && tt !== null && !Number.isNaN(Number(tt))
-                ? Number(tt)
-                : undefined
+        const tf = num((req.query as any).totalAmountFrom)
+        const tt = num((req.query as any).totalAmountTo)
+        const totalFrom = Number.isFinite(tf) ? tf : undefined
+        const totalTo = Number.isFinite(tt) ? tt : undefined
 
-        const df = first<string>(req.query.orderDateFrom)
-        const dt = first<string>(req.query.orderDateTo)
-        const dateFrom = df ? new Date(String(df)) : undefined
-        const dateTo = dt ? new Date(String(dt)) : undefined
+        const df = (req.query as any).orderDateFrom
+            ? new Date(String((req.query as any).orderDateFrom))
+            : undefined
+        const dt = (req.query as any).orderDateTo
+            ? new Date(String((req.query as any).orderDateTo))
+            : undefined
 
-        const searchFirst = first<string>(req.query.search)
-        const search = typeof searchFirst === 'string' ? searchFirst : ''
+        const search =
+            typeof (req.query as any).search === 'string'
+                ? (req.query as any).search
+                : ''
 
         const match: Record<string, any> = {}
-        if (
-            status &&
-            Object.values(StatusType).includes(status as StatusType)
-        ) {
+        if (status && Object.values(StatusType).includes(status as StatusType))
             match.status = status
-        }
         if (typeof totalFrom === 'number' && !Number.isNaN(totalFrom)) {
             match.totalAmount = {
                 ...(match.totalAmount || {}),
@@ -104,11 +83,11 @@ export const getOrders = async (
         if (typeof totalTo === 'number' && !Number.isNaN(totalTo)) {
             match.totalAmount = { ...(match.totalAmount || {}), $lte: totalTo }
         }
-        if (dateFrom instanceof Date && !Number.isNaN(dateFrom.getTime())) {
-            match.createdAt = { ...(match.createdAt || {}), $gte: dateFrom }
+        if (df instanceof Date && !Number.isNaN(df.getTime())) {
+            match.createdAt = { ...(match.createdAt || {}), $gte: df }
         }
-        if (dateTo instanceof Date && !Number.isNaN(dateTo.getTime())) {
-            match.createdAt = { ...(match.createdAt || {}), $lte: dateTo }
+        if (dt instanceof Date && !Number.isNaN(dt.getTime())) {
+            match.createdAt = { ...(match.createdAt || {}), $lte: dt }
         }
 
         const basePipeline: any[] = [{ $match: match }]
@@ -132,7 +111,6 @@ export const getOrders = async (
             )
         }
 
-        // --- 5) Данные и подсчёт ---
         const dataPipeline = [
             ...basePipeline,
             {
@@ -189,20 +167,19 @@ export const getOrdersCurrentUser = async (
     next: NextFunction
 ) => {
     try {
-        if ('search' in req.query && typeof req.query.search !== 'string') {
-            return next(new BadRequestError('Некорректный параметр поиска'))
-        }
         const userId = req.user?._id
         const page = clamp(
-            parsePositiveInt(req.query.page, 1),
+            num((req.query as any).page) || 1,
             1,
             Number.MAX_SAFE_INTEGER
         )
-        const limit = clamp(parsePositiveInt(req.query.limit, 5), 1, 10)
+        const limit = clamp(num((req.query as any).limit) || 5, 1, 10)
         const skip = (page - 1) * limit
 
         const search =
-            typeof req.query.search === 'string' ? req.query.search : ''
+            typeof (req.query as any).search === 'string'
+                ? (req.query as any).search
+                : ''
         const match: Record<string, any> = { customer: userId }
         const basePipeline: any[] = [{ $match: match }]
 
@@ -273,8 +250,6 @@ export const getOrdersCurrentUser = async (
         return next(error)
     }
 }
-
-/* ========================= OTHERS ========================= */
 
 export const getOrderByNumber = async (
     req: Request,
