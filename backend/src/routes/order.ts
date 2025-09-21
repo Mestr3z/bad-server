@@ -22,7 +22,7 @@ import {
 const router = Router()
 
 const withUser =
-    (h: (req: ReqWithUser, ...args: any[]) => any): RequestHandler =>
+    (h: (req: ReqWithUser, ...a: any[]) => any): RequestHandler =>
     (req, res, next) =>
         h(req as ReqWithUser, res, next)
 
@@ -42,16 +42,11 @@ const normalizeLimit: RequestHandler = (req, _res, next) => {
 }
 
 router.get('/', auth, adminOnly, normalizeLimit, validateOrdersQuery, getOrders)
-
 router.get('/me', auth, withUser(getOrdersCurrentUser))
 router.get('/me/:orderNumber', auth, withUser(getOrderCurrentUserByNumber))
-
 router.get('/:orderNumber', auth, adminOnly, getOrderByNumber)
-
 router.post('/', validateOrderBody, withUser(createOrder))
-
 router.patch('/:orderNumber', auth, adminOnly, updateOrder)
-
 router.delete('/:id', auth, adminOnly, deleteOrder)
 
 export default router

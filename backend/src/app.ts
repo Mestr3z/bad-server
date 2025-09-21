@@ -44,10 +44,9 @@ app.use(
     })
 )
 app.use((req, res, next) => {
-    const reqOrigin =
-        (req.headers.origin as string | undefined) || DEFAULT_ORIGIN
-    if (allow.has(reqOrigin) && !res.getHeader('Access-Control-Allow-Origin')) {
-        res.setHeader('Access-Control-Allow-Origin', reqOrigin)
+    const o = (req.headers.origin as string | undefined) || DEFAULT_ORIGIN
+    if (allow.has(o) && !res.getHeader('Access-Control-Allow-Origin')) {
+        res.setHeader('Access-Control-Allow-Origin', o)
     }
     res.setHeader('Vary', 'Origin')
     next()
@@ -63,6 +62,7 @@ app.use(
 app.use(hpp())
 app.use(compression())
 app.set('trust proxy', 1)
+
 app.use(
     rateLimit({
         windowMs: 60_000,
@@ -83,6 +83,7 @@ app.use(mongoSanitize())
 app.use(cookieParser())
 app.use(urlencoded({ extended: false }))
 app.use(json({ limit: '1mb' }))
+
 app.use(serveStatic(path.join(__dirname, 'public')))
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
@@ -101,8 +102,10 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
 
 app.use('/api/orders', orderRouter)
 app.use('/orders', orderRouter)
+
 app.use('/api/upload', uploadRouter)
 app.use('/upload', uploadRouter)
+
 app.use('/api', routes)
 app.use('/', routes)
 
