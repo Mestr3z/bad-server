@@ -38,12 +38,24 @@ export const getOrders = async (
     next: NextFunction
 ) => {
     try {
+        let pageRaw: string | null = null
+        let limitRaw: string | null = null
+        try {
+            const u = new URL(req.originalUrl, 'http://local')
+            pageRaw = u.searchParams.get('page')
+            limitRaw = u.searchParams.get('limit')
+        } catch {
+            pageRaw = typeof req.query.page === 'string' ? req.query.page : null
+            limitRaw =
+                typeof req.query.limit === 'string' ? req.query.limit : null
+        }
+
         const page = clamp(
-            parsePositiveInt(req.query.page, 1),
+            parsePositiveInt(pageRaw, 1),
             1,
             Number.MAX_SAFE_INTEGER
         )
-        const limit = clamp(parsePositiveInt(req.query.limit, 10), 1, 10)
+        const limit = clamp(parsePositiveInt(limitRaw, 10), 1, 10)
         const skip = (page - 1) * limit
 
         const sortFieldRaw = String(first(req.query.sortField) ?? 'createdAt')
@@ -83,13 +95,13 @@ export const getOrders = async (
         ) {
             match.status = status
         }
-        if (typeof totalFrom === 'number') {
+        if (typeof totalFrom === 'number' && !Number.isNaN(totalFrom)) {
             match.totalAmount = {
                 ...(match.totalAmount || {}),
                 $gte: totalFrom,
             }
         }
-        if (typeof totalTo === 'number') {
+        if (typeof totalTo === 'number' && !Number.isNaN(totalTo)) {
             match.totalAmount = { ...(match.totalAmount || {}), $lte: totalTo }
         }
         if (dateFrom instanceof Date && !Number.isNaN(dateFrom.getTime())) {
@@ -120,6 +132,7 @@ export const getOrders = async (
             )
         }
 
+        // --- 5) Данные и подсчёт ---
         const dataPipeline = [
             ...basePipeline,
             {
@@ -260,6 +273,8 @@ export const getOrdersCurrentUser = async (
         return next(error)
     }
 }
+
+/* ========================= OTHERS ========================= */
 
 export const getOrderByNumber = async (
     req: Request,
