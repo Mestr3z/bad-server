@@ -56,13 +56,16 @@ jobs:
 
       - name: Smoke checks
         run: |
-          set -e
+          set -eux
+
           BASE=http://localhost:3000
 
           code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/orders?limit=5")
           test "$code" = "401"
 
-          printf '\x89PNG\r\n\x1a\n\x00' > ok.png
+          dd if=/dev/zero bs=1 count=4096 of=pad.bin
+          printf '\x89PNG\r\n\x1a\n' > ok.png
+          cat pad.bin >> ok.png
           code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@ok.png" $BASE/api/upload)
           test "$code" = "201"
 
@@ -72,11 +75,13 @@ jobs:
 
           node - <<'JS'
           const fs=require('fs');
-          // маленький валидный PNG-заголовок + мусор
-          const src=Buffer.concat([Buffer.from([0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A]), Buffer.alloc(16)]);
-          // вставляем tEXt-чанк "hello=world"
-          const out=Buffer.concat([src.slice(0,8), Buffer.from([0,0,0,11]), Buffer.from('tEXt'), Buffer.from('hello=world'), Buffer.alloc(4), src.slice(8)]);
-          fs.writeFileSync('ok_meta.png', out);
+          const src=fs.readFileSync('ok.png');
+          const sig=src.slice(0,8), rest=src.slice(8);
+          const text=Buffer.from('hello=world');
+          const len = Buffer.alloc(4); len.writeUInt32BE(text.length,0);
+          const type=Buffer.from('tEXt');
+          const crc = Buffer.alloc(4); 
+          fs.writeFileSync('ok_meta.png', Buffer.concat([sig,len,type,text,crc,rest]));
           JS
           code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@ok_meta.png" $BASE/api/upload)
           test "$code" = "400"
