@@ -1,6 +1,13 @@
 import { Router, type RequestHandler } from 'express'
-import { validateOrderBody } from '../middlewares/validations'
-import { auth, type ReqWithUser } from '../middlewares/auth'
+import {
+    validateOrdersQuery,
+    validateOrderBody,
+} from '../middlewares/validations'
+import {
+    auth,
+    roleGuardMiddleware,
+    type ReqWithUser,
+} from '../middlewares/auth'
 import { Role } from '../models/user'
 import {
     getOrders,
@@ -15,12 +22,12 @@ import {
 const router = Router()
 
 const withUser =
-    (h: (req: ReqWithUser, res: any, next: any) => any): RequestHandler =>
+    (h: (req: ReqWithUser, ...args: any[]) => any): RequestHandler =>
     (req, res, next) =>
         h(req as ReqWithUser, res, next)
 
 const adminOnly: RequestHandler = (req, res, next) => {
-    const user = (req as ReqWithUser).user
+    const user = (req as unknown as ReqWithUser).user
     if (!user?.roles?.includes(Role.Admin)) {
         return res.status(403).json({ message: 'Forbidden' })
     }
@@ -34,12 +41,17 @@ const normalizeLimit: RequestHandler = (req, _res, next) => {
     next()
 }
 
-router.get('/', auth, adminOnly, normalizeLimit, getOrders)
-router.get('/me', auth, normalizeLimit, withUser(getOrdersCurrentUser))
+router.get('/', auth, adminOnly, normalizeLimit, validateOrdersQuery, getOrders)
+
+router.get('/me', auth, withUser(getOrdersCurrentUser))
 router.get('/me/:orderNumber', auth, withUser(getOrderCurrentUserByNumber))
+
 router.get('/:orderNumber', auth, adminOnly, getOrderByNumber)
+
 router.post('/', validateOrderBody, withUser(createOrder))
+
 router.patch('/:orderNumber', auth, adminOnly, updateOrder)
+
 router.delete('/:id', auth, adminOnly, deleteOrder)
 
 export default router
