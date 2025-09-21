@@ -18,6 +18,7 @@ import {
     updateOrder,
     deleteOrder,
 } from '../controllers/order'
+import BadRequestError from '../errors/bad-request-error'
 
 const router = Router()
 
@@ -33,10 +34,20 @@ const normalizeLimit: RequestHandler = (req, _res, next) => {
     next()
 }
 
+const rejectMongoOperators: RequestHandler = (req, _res, next) => {
+    for (const key of Object.keys(req.query)) {
+        if (key.includes('$') || key.includes('.')) {
+            return next(new BadRequestError('Некорректный параметр запроса'))
+        }
+    }
+    next()
+}
+
 router.get(
     '/',
     auth,
     roleGuardMiddleware(Role.Admin),
+    rejectMongoOperators,
     normalizeLimit,
     validateOrdersQuery,
     getOrders

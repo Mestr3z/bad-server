@@ -33,7 +33,7 @@ export const validateOrdersQuery = celebrate({
         orderDateFrom: Joi.date().iso(),
         orderDateTo: Joi.date().iso(),
         search: Joi.string().trim().max(64).pattern(SAFE_SEARCH_RX),
-    }).unknown(false),
+    }).unknown(true), // ← разрешаем «лишние» безопасные параметры
 })
 
 export const validateUsersQuery = celebrate({
