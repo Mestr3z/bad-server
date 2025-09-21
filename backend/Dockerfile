@@ -1,7 +1,9 @@
 FROM node:22-alpine
-RUN mkdir /app
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-CMD ["npm", "run", "dev"]
+ENV PORT=3000
+ENV NODE_ENV=development
+EXPOSE 3000
+CMD ["npx","nodemon","-L","src/app.ts"]

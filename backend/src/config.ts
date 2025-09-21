@@ -1,24 +1,34 @@
+import 'dotenv/config'
 import { CookieOptions } from 'express'
 import ms from 'ms'
 
-export const { PORT = '3000' } = process.env
-export const { DB_ADDRESS = 'mongodb://127.0.0.1:27017/weblarek' } = process.env
-export const { JWT_SECRET = 'JWT_SECRET' } = process.env
+export const { PORT = '3000', NODE_ENV = 'development' } = process.env
+
+export const DB_ADDRESS =
+  process.env.DB_ADDRESS ||
+  'mongodb://127.0.0.1:27017/weblarek?authSource=admin'
+
+export const CORS_ORIGINS =
+  process.env.CORS_ORIGINS || process.env.ORIGIN_ALLOW || ''
+
+export const UPLOAD_PATH = process.env.UPLOAD_PATH || 'images'
+export const UPLOAD_PATH_TEMP = process.env.UPLOAD_PATH_TEMP || 'temp'
+
 export const ACCESS_TOKEN = {
-    secret: process.env.AUTH_ACCESS_TOKEN_SECRET || 'secret-dev',
-    expiry: process.env.AUTH_ACCESS_TOKEN_EXPIRY || '10m',
+  secret: process.env.ACCESS_TOKEN_SECRET || process.env.AUTH_ACCESS_TOKEN_SECRET || 'secret-dev',
+  expiry: process.env.ACCESS_TOKEN_EXPIRY || process.env.AUTH_ACCESS_TOKEN_EXPIRY || '15m',
 }
+
+const refreshCookie: CookieOptions = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: NODE_ENV === 'production',
+  maxAge: ms(process.env.REFRESH_TOKEN_EXPIRY || process.env.AUTH_REFRESH_TOKEN_EXPIRY || '30d'),
+  path: '/',
+}
+
 export const REFRESH_TOKEN = {
-    secret: process.env.AUTH_REFRESH_TOKEN_SECRET || 'secret-dev',
-    expiry: process.env.AUTH_REFRESH_TOKEN_EXPIRY || '7d',
-    cookie: {
-        name: 'refreshToken',
-        options: {
-            httpOnly: true,
-            sameSite: 'lax',
-            secure: false,
-            maxAge: ms(process.env.AUTH_REFRESH_TOKEN_EXPIRY || '7d'),
-            path: '/',
-        } as CookieOptions,
-    },
+  secret: process.env.REFRESH_TOKEN_SECRET || process.env.AUTH_REFRESH_TOKEN_SECRET || 'secret-dev',
+  expiry: process.env.REFRESH_TOKEN_EXPIRY || process.env.AUTH_REFRESH_TOKEN_EXPIRY || '30d',
+  cookie: { name: 'refreshToken', options: refreshCookie },
 }

@@ -2,27 +2,88 @@ name: Tests
 
 on:
   push:
-    branches:
-      - '**'
-    tags:
-      - '**'
+    branches: ['**']
+    tags: ['**']
+
 env:
   DIR_TESTS: /tmp/tests-bad-server
   REP_TESTS: https://github.com/Yandex-Practicum/tests-bad-server.git
   REPO: ${{ github.event.repository.name }}
+
 jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
-    - name: Set up GitHub Actions
-      uses: actions/checkout@v4
-    - name: Use Node.js 18.x
-      uses: actions/setup-node@v4
-      with:
-        node-version: 18.x
-    - name: Get testing lib
-      run: set -eu && git clone --depth 1 $REP_TESTS $DIR_TESTS
-    - name: Start project
-      run: bash $DIR_TESTS/bin/start_project.sh
-    - name: Run tests
-      run: bash $DIR_TESTS/bin/run.sh
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 18.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+
+      - name: Install helpers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+
+      - name: Clone tests repo
+        run: git clone --depth 1 "$REP_TESTS" "$DIR_TESTS"
+
+      - name: Start project
+        run: bash "$DIR_TESTS/bin/start_project.sh"
+
+      - name: Build and start
+        run: |
+          docker compose build --no-cache server backend
+          docker compose up -d server backend
+
+      - name: Wait for services
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3000/health >/dev/null && break
+            sleep 1
+          done
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3000/api/health >/dev/null && break
+            sleep 1
+          done
+
+      - name: Print nginx & env
+        run: |
+          docker compose exec -T server nginx -T | sed -n '1,220p'
+          docker compose exec -T backend node -e "console.log('UPLOAD_PATH=', (process.env.UPLOAD_PATH||'').trim(), ' CORS_ORIGINS=', process.env.CORS_ORIGINS||'')"
+
+      - name: Smoke checks
+        run: |
+          set -eux
+          BASE=http://localhost:3000
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/orders?limit=5")
+          test "$code" = "401"
+
+          dd if=/dev/zero bs=1 count=4096 of=pad.bin
+          printf '\x89PNG\r\n\x1a\n' > ok.png
+          cat pad.bin >> ok.png
+          code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@ok.png" $BASE/api/upload)
+          test "$code" = "201"
+
+          echo 'not an image' > fake.png
+          code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@fake.png" $BASE/api/upload)
+          test "$code" = "400"
+
+          node - <<'JS'
+          const fs=require('fs');
+          const src=fs.readFileSync('ok.png');
+          const sig=src.slice(0,8), rest=src.slice(8);
+          const text=Buffer.from('hello=world');
+          const len = Buffer.alloc(4); len.writeUInt32BE(text.length,0);
+          const type=Buffer.from('tEXt');
+          const crc = Buffer.alloc(4);
+          fs.writeFileSync('ok_meta.png', Buffer.concat([sig,len,type,text,crc,rest]));
+          JS
+          code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@ok_meta.png" $BASE/api/upload)
+          test "$code" = "400"
+
+      - name: Run tests
+        run: bash "$DIR_TESTS/bin/run.sh"

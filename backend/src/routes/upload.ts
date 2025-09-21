@@ -1,8 +1,9 @@
 import { Router } from 'express'
+import file from '../middlewares/file'
 import { uploadFile } from '../controllers/upload'
-import fileMiddleware from '../middlewares/file'
 
-const uploadRouter = Router()
-uploadRouter.post('/', fileMiddleware.single('file'), uploadFile)
+const router = Router()
 
-export default uploadRouter
+router.post('/', file.single('file'), uploadFile)
+
+export default router

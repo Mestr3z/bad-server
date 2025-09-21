@@ -1,0 +1,24 @@
+{
+  "name": "bad-server",
+  "version": "1.0.0",
+  "description": "1. Склонировать репозиторий 2. Запустить docker ```bash docker compose up -d ``` 3. Наполнить базу данных [README.md](.dump%2FREADME.md) 4. Перейти по адресу http://localhost/ и на странице должны быть продукты. 5. На странице http://localhost/login/ можно авторизоваться. 6. Админка находится по адресу http://localhost/admin/",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mestr3z/bad-server.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Mestr3z/bad-server/issues"
+  },
+  "homepage": "https://github.com/Mestr3z/bad-server#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
+  }
+}

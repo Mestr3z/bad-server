@@ -2,42 +2,126 @@ import { errors } from 'celebrate'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import 'dotenv/config'
-import express, { json, urlencoded } from 'express'
+import express, { json, urlencoded, type RequestHandler } from 'express'
 import mongoose from 'mongoose'
 import path from 'path'
-import { DB_ADDRESS } from './config'
+import helmet from 'helmet'
+import hpp from 'hpp'
+import rateLimit from 'express-rate-limit'
+import slowDown from 'express-slow-down'
+import mongoSanitize from 'express-mongo-sanitize'
+import compression from 'compression'
+import csrf from 'csurf'
+
+import { DB_ADDRESS, CORS_ORIGINS, PORT, NODE_ENV } from './config'
 import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
-import routes from './routes'
 
-const { PORT = 3000 } = process.env
+import routes from './routes'
+import orderRouter from './routes/order'
+
 const app = express()
+const isProd = NODE_ENV === 'production'
+
+const DEFAULT_ORIGIN = 'http://localhost:5173'
+const allow = new Set(
+    (CORS_ORIGINS || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+)
+if (!allow.has(DEFAULT_ORIGIN)) allow.add(DEFAULT_ORIGIN)
+
+app.use(
+    cors({
+        origin: (origin, cb) => {
+            if (!origin) return cb(null, true)
+            if (allow.has(origin)) return cb(null, true)
+            return cb(new Error('CORS'))
+        },
+        credentials: true,
+    })
+)
+
+app.use((req, res, next) => {
+    const reqOrigin =
+        (req.headers.origin as string | undefined) || DEFAULT_ORIGIN
+    if (allow.has(reqOrigin) && !res.getHeader('Access-Control-Allow-Origin')) {
+        res.setHeader('Access-Control-Allow-Origin', reqOrigin)
+    }
+    res.setHeader('Vary', 'Origin')
+    next()
+})
+
+app.disable('x-powered-by')
+app.use(
+    helmet({
+        crossOriginResourcePolicy: { policy: 'cross-origin' },
+        contentSecurityPolicy: false,
+    })
+)
+app.use(hpp())
+app.use(compression())
+app.set('trust proxy', 1)
+
+app.use(
+    rateLimit({
+        windowMs: 60_000,
+        max: 50,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { message: 'Too many requests' },
+    })
+)
+app.use(
+    slowDown({
+        windowMs: 60_000,
+        delayAfter: 120,
+        delayMs: () => 250,
+    })
+)
+app.use(mongoSanitize())
 
 app.use(cookieParser())
-
-app.use(cors())
-// app.use(cors({ origin: ORIGIN_ALLOW, credentials: true }));
-// app.use(express.static(path.join(__dirname, 'public')));
-
+app.use(urlencoded({ extended: false }))
+app.use(json({ limit: '1mb' }))
 app.use(serveStatic(path.join(__dirname, 'public')))
 
-app.use(urlencoded({ extended: true }))
-app.use(json())
+app.get('/health', (_req, res) => res.json({ status: 'ok' }))
+app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 
-app.options('*', cors())
-app.use(routes)
+const csrfProtection: RequestHandler = csrf({
+    cookie: { httpOnly: true, sameSite: 'lax', secure: isProd, path: '/' },
+}) as unknown as RequestHandler
+
+app.get('/csrf-token', csrfProtection, (req, res) => {
+    res.json({ csrfToken: (req as any).csrfToken() })
+})
+app.get('/api/csrf-token', csrfProtection, (req, res) => {
+    res.json({ csrfToken: (req as any).csrfToken() })
+})
+
+app.use('/api/orders', orderRouter)
+app.use('/api', routes)
+app.use('/orders', orderRouter)
+app.use('/', routes)
+
+app.use((req, res, next) => {
+    if (res.headersSent) return next()
+    res.status(404).json({ message: 'Not found' })
+})
+
 app.use(errors())
 app.use(errorHandler)
-
-// eslint-disable-next-line no-console
 
 const bootstrap = async () => {
     try {
         await mongoose.connect(DB_ADDRESS)
-        await app.listen(PORT, () => console.log('ok'))
+        await app.listen(Number(PORT) || 3000, () => {})
     } catch (error) {
         console.error(error)
     }
 }
-
 bootstrap()
+
+export default app
