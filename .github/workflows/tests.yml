@@ -30,15 +30,15 @@ jobs:
       - name: Clone tests repo
         run: git clone --depth 1 "$REP_TESTS" "$DIR_TESTS"
 
-      - name: Start project (from tests repo script)
+      - name: Start project
         run: bash "$DIR_TESTS/bin/start_project.sh"
 
-      - name: Rebuild backend & server without cache and restart
+      - name: Build and start
         run: |
           docker compose build --no-cache server backend
           docker compose up -d server backend
 
-      - name: Wait for services (nginx -> backend)
+      - name: Wait for services
         run: |
           for i in $(seq 1 60); do
             curl -sf http://localhost:3000/health >/dev/null && break
@@ -49,15 +49,14 @@ jobs:
             sleep 1
           done
 
-      - name: Print nginx & env (diagnostics)
+      - name: Print nginx & env
         run: |
           docker compose exec -T server nginx -T | sed -n '1,220p'
-          docker compose exec -T backend node -e "console.log('UPLOAD_PATH=',process.env.UPLOAD_PATH,' CORS_ORIGINS=',process.env.CORS_ORIGINS)"
+          docker compose exec -T backend node -e "console.log('UPLOAD_PATH=', (process.env.UPLOAD_PATH||'').trim(), ' CORS_ORIGINS=', process.env.CORS_ORIGINS||'')"
 
       - name: Smoke checks
         run: |
           set -eux
-
           BASE=http://localhost:3000
 
           code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/orders?limit=5")
@@ -80,11 +79,11 @@ jobs:
           const text=Buffer.from('hello=world');
           const len = Buffer.alloc(4); len.writeUInt32BE(text.length,0);
           const type=Buffer.from('tEXt');
-          const crc = Buffer.alloc(4); 
+          const crc = Buffer.alloc(4);
           fs.writeFileSync('ok_meta.png', Buffer.concat([sig,len,type,text,crc,rest]));
           JS
           code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@ok_meta.png" $BASE/api/upload)
           test "$code" = "400"
 
-      - name: Run tests (from tests repo)
+      - name: Run tests
         run: bash "$DIR_TESTS/bin/run.sh"
