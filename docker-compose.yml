@@ -36,6 +36,7 @@ services:
       context: backend
     env_file:
       - backend/.env
+    command: sh -c "npm run seed && npx nodemon -L src/app.ts"
     volumes:
       - ./backend/src:/app/src
       - public:/app/src/public
@@ -45,13 +46,11 @@ services:
       - internal
     depends_on:
       - mongo
-    command: sh -c "npm run seed && npx nodemon -L src/app.ts"
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-
 
   server:
     build:
