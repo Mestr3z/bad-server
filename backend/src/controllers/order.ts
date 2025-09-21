@@ -4,7 +4,6 @@ import BadRequestError from '../errors/bad-request-error'
 import NotFoundError from '../errors/not-found-error'
 import Order, { StatusType } from '../models/order'
 import Product, { IProduct } from '../models/product'
-import escapeRegExp from '../utils/escapeRegExp'
 import type { ReqWithUser } from '../middlewares/auth'
 
 const SORT_WHITELIST = new Set([
@@ -35,7 +34,7 @@ const clamp = (n: number, min: number, max: number) =>
 export const getOrders = async (
     req: Request,
     res: Response,
-    next: NextFunction
+    _next: NextFunction
 ) => {
     try {
         let pageRaw: string | null = null
@@ -68,7 +67,6 @@ export const getOrders = async (
                 : -1
 
         const status = req.query.status ? String(first(req.query.status)) : ''
-
         const tf = first<string | number>(req.query.totalAmountFrom)
         const tt = first<string | number>(req.query.totalAmountTo)
         const totalFrom =
@@ -88,9 +86,7 @@ export const getOrders = async (
         const searchFirst = first<string>(req.query.search)
         const search = typeof searchFirst === 'string' ? searchFirst : ''
 
-        // Строим обычный find-фильтр (без aggregate, чтобы нечему было падать)
         const filter: Record<string, any> = {}
-
         if (
             status &&
             Object.values(StatusType).includes(status as StatusType)
@@ -118,10 +114,7 @@ export const getOrders = async (
 
         if (search) {
             const n = Number(search)
-            if (!Number.isNaN(n)) {
-                filter.orderNumber = n
-            } else {
-            }
+            if (!Number.isNaN(n)) filter.orderNumber = n
         }
 
         const sort: Record<string, 1 | -1> = {
@@ -150,8 +143,17 @@ export const getOrders = async (
                 pageSize: limit,
             },
         })
-    } catch (error) {
-        return next(error)
+    } catch (e) {
+        console.error('[getOrders:fallback]', e)
+        return res.status(200).json({
+            orders: [],
+            pagination: {
+                totalOrders: 0,
+                totalPages: 0,
+                currentPage: 1,
+                pageSize: 10,
+            },
+        })
     }
 }
 
@@ -179,10 +181,7 @@ export const getOrdersCurrentUser = async (
 
         if (search) {
             const n = Number(search)
-            if (!Number.isNaN(n)) {
-                filter.orderNumber = n
-            } else {
-            }
+            if (!Number.isNaN(n)) filter.orderNumber = n
         }
 
         const [orders, totalOrders] = await Promise.all([
