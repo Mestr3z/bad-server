@@ -14,15 +14,21 @@ const SORT_WHITELIST = new Set([
     'status',
 ])
 
-const num = (v: unknown): number => {
-    const n =
-        typeof v === 'number'
-            ? v
-            : typeof v === 'string'
-              ? parseInt(v.trim(), 10)
-              : NaN
-    return Number.isFinite(n) ? n : NaN
+const first = <T = unknown>(v: unknown): T | undefined =>
+    (Array.isArray(v) ? (v[0] as T) : (v as T)) as T | undefined
+
+const parsePositiveInt = (v: unknown, fallback: number): number => {
+    const cand = first<string | number>(v)
+    const s =
+        typeof cand === 'number'
+            ? String(cand)
+            : typeof cand === 'string'
+              ? cand.trim()
+              : String(cand ?? '')
+    const n = Number.parseInt(s, 10)
+    return Number.isFinite(n) && n > 0 ? n : fallback
 }
+
 const clamp = (n: number, min: number, max: number) =>
     Math.min(Math.max(n, min), max)
 
@@ -32,119 +38,107 @@ export const getOrders = async (
     next: NextFunction
 ) => {
     try {
+        let pageRaw: string | null = null
+        let limitRaw: string | null = null
+        try {
+            const u = new URL(req.originalUrl, 'http://local')
+            pageRaw = u.searchParams.get('page')
+            limitRaw = u.searchParams.get('limit')
+        } catch {
+            pageRaw = typeof req.query.page === 'string' ? req.query.page : null
+            limitRaw =
+                typeof req.query.limit === 'string' ? req.query.limit : null
+        }
+
         const page = clamp(
-            num((req.query as any).page) || 1,
+            parsePositiveInt(pageRaw, 1),
             1,
             Number.MAX_SAFE_INTEGER
         )
-        const limit = clamp(num((req.query as any).limit) || 10, 1, 10)
+        const limit = clamp(parsePositiveInt(limitRaw, 10), 1, 10)
         const skip = (page - 1) * limit
 
-        const sortFieldRaw = String((req.query as any).sortField ?? 'createdAt')
+        const sortFieldRaw = String(first(req.query.sortField) ?? 'createdAt')
         const sortField = SORT_WHITELIST.has(sortFieldRaw)
             ? sortFieldRaw
             : 'createdAt'
-        const sortOrder =
-            String((req.query as any).sortOrder ?? 'desc').toLowerCase() ===
-            'asc'
+        const sortOrderNum =
+            String(first(req.query.sortOrder) ?? 'desc').toLowerCase() === 'asc'
                 ? 1
                 : -1
 
-        const status = (req.query as any).status
-            ? String((req.query as any).status)
-            : ''
+        const status = req.query.status ? String(first(req.query.status)) : ''
 
-        const tf = num((req.query as any).totalAmountFrom)
-        const tt = num((req.query as any).totalAmountTo)
-        const totalFrom = Number.isFinite(tf) ? tf : undefined
-        const totalTo = Number.isFinite(tt) ? tt : undefined
+        const tf = first<string | number>(req.query.totalAmountFrom)
+        const tt = first<string | number>(req.query.totalAmountTo)
+        const totalFrom =
+            tf !== undefined && tf !== null && !Number.isNaN(Number(tf))
+                ? Number(tf)
+                : undefined
+        const totalTo =
+            tt !== undefined && tt !== null && !Number.isNaN(Number(tt))
+                ? Number(tt)
+                : undefined
 
-        const df = (req.query as any).orderDateFrom
-            ? new Date(String((req.query as any).orderDateFrom))
-            : undefined
-        const dt = (req.query as any).orderDateTo
-            ? new Date(String((req.query as any).orderDateTo))
-            : undefined
+        const df = first<string>(req.query.orderDateFrom)
+        const dt = first<string>(req.query.orderDateTo)
+        const dateFrom = df ? new Date(String(df)) : undefined
+        const dateTo = dt ? new Date(String(dt)) : undefined
 
-        const search =
-            typeof (req.query as any).search === 'string'
-                ? (req.query as any).search
-                : ''
+        const searchFirst = first<string>(req.query.search)
+        const search = typeof searchFirst === 'string' ? searchFirst : ''
 
-        const match: Record<string, any> = {}
-        if (status && Object.values(StatusType).includes(status as StatusType))
-            match.status = status
+        // Строим обычный find-фильтр (без aggregate, чтобы нечему было падать)
+        const filter: Record<string, any> = {}
+
+        if (
+            status &&
+            Object.values(StatusType).includes(status as StatusType)
+        ) {
+            filter.status = status
+        }
         if (typeof totalFrom === 'number' && !Number.isNaN(totalFrom)) {
-            match.totalAmount = {
-                ...(match.totalAmount || {}),
+            filter.totalAmount = {
+                ...(filter.totalAmount || {}),
                 $gte: totalFrom,
             }
         }
         if (typeof totalTo === 'number' && !Number.isNaN(totalTo)) {
-            match.totalAmount = { ...(match.totalAmount || {}), $lte: totalTo }
+            filter.totalAmount = {
+                ...(filter.totalAmount || {}),
+                $lte: totalTo,
+            }
         }
-        if (df instanceof Date && !Number.isNaN(df.getTime())) {
-            match.createdAt = { ...(match.createdAt || {}), $gte: df }
+        if (dateFrom instanceof Date && !Number.isNaN(dateFrom.getTime())) {
+            filter.createdAt = { ...(filter.createdAt || {}), $gte: dateFrom }
         }
-        if (dt instanceof Date && !Number.isNaN(dt.getTime())) {
-            match.createdAt = { ...(match.createdAt || {}), $lte: dt }
-        }
-
-        const basePipeline: any[] = [{ $match: match }]
-
-        const searchNum = Number(search)
-        const byNumber = !Number.isNaN(searchNum)
-        if (search && byNumber) {
-            basePipeline.push({ $match: { orderNumber: searchNum } })
-        } else if (search) {
-            const rx = new RegExp(escapeRegExp(search), 'i')
-            basePipeline.push(
-                {
-                    $lookup: {
-                        from: 'products',
-                        localField: 'products',
-                        foreignField: '_id',
-                        as: 'products',
-                    },
-                },
-                { $match: { 'products.title': { $regex: rx } } }
-            )
+        if (dateTo instanceof Date && !Number.isNaN(dateTo.getTime())) {
+            filter.createdAt = { ...(filter.createdAt || {}), $lte: dateTo }
         }
 
-        const dataPipeline = [
-            ...basePipeline,
-            {
-                $lookup: {
-                    from: 'users',
-                    localField: 'customer',
-                    foreignField: '_id',
-                    as: 'customer',
-                },
-            },
-            {
-                $unwind: {
-                    path: '$customer',
-                    preserveNullAndEmptyArrays: true,
-                },
-            },
-            { $sort: { [sortField]: sortOrder, _id: 1 } },
-            { $skip: skip },
-            { $limit: limit },
-        ]
+        if (search) {
+            const n = Number(search)
+            if (!Number.isNaN(n)) {
+                filter.orderNumber = n
+            } else {
+            }
+        }
 
-        const countPipeline = [
-            ...basePipeline,
-            { $project: { _id: 1 } },
-            { $group: { _id: '$_id' } },
-            { $count: 'total' },
-        ]
+        const sort: Record<string, 1 | -1> = {
+            [sortField]: sortOrderNum,
+            _id: 1,
+        }
 
-        const [ordersRaw, counted] = await Promise.all([
-            Order.aggregate(dataPipeline),
-            Order.aggregate(countPipeline),
+        const [ordersRaw, totalOrders] = await Promise.all([
+            Order.find(filter)
+                .sort(sort)
+                .skip(skip)
+                .limit(limit)
+                .populate(['customer', 'products'])
+                .lean(),
+            Order.countDocuments(filter),
         ])
 
-        const totalOrders = counted[0]?.total || 0
         const totalPages = totalOrders > 0 ? Math.ceil(totalOrders / limit) : 0
 
         return res.status(200).json({
@@ -167,74 +161,40 @@ export const getOrdersCurrentUser = async (
     next: NextFunction
 ) => {
     try {
+        if ('search' in req.query && typeof req.query.search !== 'string') {
+            return next(new BadRequestError('Некорректный параметр поиска'))
+        }
         const userId = req.user?._id
         const page = clamp(
-            num((req.query as any).page) || 1,
+            parsePositiveInt(req.query.page, 1),
             1,
             Number.MAX_SAFE_INTEGER
         )
-        const limit = clamp(num((req.query as any).limit) || 5, 1, 10)
+        const limit = clamp(parsePositiveInt(req.query.limit, 5), 1, 10)
         const skip = (page - 1) * limit
 
         const search =
-            typeof (req.query as any).search === 'string'
-                ? (req.query as any).search
-                : ''
-        const match: Record<string, any> = { customer: userId }
-        const basePipeline: any[] = [{ $match: match }]
+            typeof req.query.search === 'string' ? req.query.search : ''
+        const filter: Record<string, any> = { customer: userId }
 
-        const searchNum = Number(search)
-        const byNumber = !Number.isNaN(searchNum)
-        if (search && byNumber) {
-            basePipeline.push({ $match: { orderNumber: searchNum } })
-        } else if (search) {
-            const rx = new RegExp(escapeRegExp(search), 'i')
-            basePipeline.push(
-                {
-                    $lookup: {
-                        from: 'products',
-                        localField: 'products',
-                        foreignField: '_id',
-                        as: 'products',
-                    },
-                },
-                { $match: { 'products.title': { $regex: rx } } }
-            )
+        if (search) {
+            const n = Number(search)
+            if (!Number.isNaN(n)) {
+                filter.orderNumber = n
+            } else {
+            }
         }
 
-        const dataPipeline = [
-            ...basePipeline,
-            {
-                $lookup: {
-                    from: 'users',
-                    localField: 'customer',
-                    foreignField: '_id',
-                    as: 'customer',
-                },
-            },
-            {
-                $unwind: {
-                    path: '$customer',
-                    preserveNullAndEmptyArrays: true,
-                },
-            },
-            { $sort: { createdAt: -1, _id: 1 } },
-            { $skip: skip },
-            { $limit: limit },
-        ]
-
-        const countPipeline = [
-            ...basePipeline,
-            { $project: { _id: 1 } },
-            { $group: { _id: '$_id' } },
-            { $count: 'total' },
-        ]
-
-        const [orders, counted] = await Promise.all([
-            Order.aggregate(dataPipeline),
-            Order.aggregate(countPipeline),
+        const [orders, totalOrders] = await Promise.all([
+            Order.find(filter)
+                .sort({ createdAt: -1, _id: 1 })
+                .skip(skip)
+                .limit(limit)
+                .populate(['customer', 'products'])
+                .lean(),
+            Order.countDocuments(filter),
         ])
-        const totalOrders = counted[0]?.total || 0
+
         const totalPages = totalOrders > 0 ? Math.ceil(totalOrders / limit) : 0
 
         return res.status(200).json({
