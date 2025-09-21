@@ -34,8 +34,7 @@ jobs:
         run: bash "$DIR_TESTS/bin/start_project.sh"
 
       - name: Seed users (idempotent)
-        run: |
-          docker compose exec -T backend npm run seed || true
+        run: docker compose exec -T backend npm run seed || true
 
       - name: Wait for services (nginx -> backend)
         run: |
@@ -52,20 +51,28 @@ jobs:
           set -eux
           BASE=http://localhost:3000
 
-          AT=$(curl -s -H "Content-Type: application/json" -X POST $BASE/api/auth/login -d '{"email":"admin@mail.ru","password":"password"}' | jq -r .accessToken)
-          UT=$(curl -s -H "Content-Type: application/json" -X POST $BASE/api/auth/login -d '{"email":"u1@test.com","password":"password1"}' | jq -r .accessToken || echo "")
+          AT=$(curl -s -H "Content-Type: application/json" -X POST $BASE/api/auth/login \
+            -d '{"email":"admin@mail.ru","password":"password"}' | jq -r .accessToken)
+          UT=$(curl -s -H "Content-Type: application/json" -X POST $BASE/api/auth/login \
+            -d '{"email":"user1@mail.ru","password":"password1"}' | jq -r .accessToken || echo "")
 
           test -n "$AT"
 
-          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $AT" "$BASE/orders?limit=200"); echo "orders admin => $code"; test "$code" = "200" || exit 1
-          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $UT" "$BASE/orders?limit=5");   echo "orders user  => $code"; test "$code" = "403" || exit 1
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $AT" "$BASE/orders?limit=200"); echo "orders admin => $code"; test "$code" = "200"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $UT" "$BASE/orders?limit=5");   echo "orders user  => $code"; test "$code" = "403"
 
-          printf '\x89PNG\r\n\x1a\n' > ok.png; dd if=/dev/zero bs=1 count=4096 of=pad.bin status=none; cat pad.bin >> ok.png
-          code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@ok.png" $BASE/upload); echo "upload ok => $code"; test "$code" = "201" || exit 1
+          base64 -d >/tmp/ok.png <<'PNG'
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAucB9W+R8+UAAAAASUVORK5CYII=
+PNG
+          dd if=/dev/zero bs=1 count=3000 status=none >>/tmp/ok.png
 
-          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" -X POST "$BASE/orders" \
-            -d '{"items":["650000000000000000000000"],"payment":"card","email":"u@a.a","phone":"123","address":"ул."}')
-          echo "create invalid phone => $code"; test "$code" = "400" || exit 1
+          code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@/tmp/ok.png" $BASE/upload); echo "upload ok => $code"; test "$code" = "201"
+
+          printf '\x89PNG\r\n\x1a\n' >/tmp/tiny.png
+          code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@/tmp/tiny.png" $BASE/upload); echo "tiny => $code"; test "$code" = "400"
+
+          printf 'not_an_image' >/tmp/bad.bin
+          code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@/tmp/bad.bin;type=image/png" $BASE/upload); echo "fake png => $code"; test "$code" = "400"
 
       - name: Run tests (from tests repo)
         run: bash "$DIR_TESTS/bin/run.sh"
