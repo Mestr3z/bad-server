@@ -14,10 +14,21 @@ const SORT_WHITELIST = new Set([
     'status',
 ])
 
-const parsePositiveInt = (v: unknown, fallback: number) => {
-    const n = Number.parseInt(String(v ?? ''), 10)
+const first = <T = unknown>(v: unknown): T | undefined =>
+    (Array.isArray(v) ? (v[0] as T) : (v as T)) as T | undefined
+
+const parsePositiveInt = (v: unknown, fallback: number): number => {
+    const cand = first<string | number>(v)
+    const s =
+        typeof cand === 'number'
+            ? String(cand)
+            : typeof cand === 'string'
+              ? cand.trim()
+              : String(cand ?? '')
+    const n = Number.parseInt(s, 10)
     return Number.isFinite(n) && n > 0 ? n : fallback
 }
+
 const clamp = (n: number, min: number, max: number) =>
     Math.min(Math.max(n, min), max)
 
@@ -27,10 +38,6 @@ export const getOrders = async (
     next: NextFunction
 ) => {
     try {
-        if ('search' in req.query && typeof req.query.search !== 'string') {
-            return next(new BadRequestError('Некорректный параметр поиска'))
-        }
-
         const page = clamp(
             parsePositiveInt(req.query.page, 1),
             1,
@@ -39,43 +46,50 @@ export const getOrders = async (
         const limit = clamp(parsePositiveInt(req.query.limit, 10), 1, 10)
         const skip = (page - 1) * limit
 
-        const sortFieldRaw = String(req.query.sortField ?? 'createdAt')
+        const sortFieldRaw = String(first(req.query.sortField) ?? 'createdAt')
         const sortField = SORT_WHITELIST.has(sortFieldRaw)
             ? sortFieldRaw
             : 'createdAt'
         const sortOrder =
-            String(req.query.sortOrder ?? 'desc').toLowerCase() === 'asc'
+            String(first(req.query.sortOrder) ?? 'desc').toLowerCase() === 'asc'
                 ? 1
                 : -1
 
-        const status = req.query.status ? String(req.query.status) : ''
+        const status = req.query.status ? String(first(req.query.status)) : ''
+
+        const tf = first<string | number>(req.query.totalAmountFrom)
+        const tt = first<string | number>(req.query.totalAmountTo)
         const totalFrom =
-            req.query.totalAmountFrom !== undefined
-                ? Number(req.query.totalAmountFrom)
+            tf !== undefined && tf !== null && !Number.isNaN(Number(tf))
+                ? Number(tf)
                 : undefined
         const totalTo =
-            req.query.totalAmountTo !== undefined
-                ? Number(req.query.totalAmountTo)
+            tt !== undefined && tt !== null && !Number.isNaN(Number(tt))
+                ? Number(tt)
                 : undefined
-        const dateFrom = req.query.orderDateFrom
-            ? new Date(String(req.query.orderDateFrom))
-            : undefined
-        const dateTo = req.query.orderDateTo
-            ? new Date(String(req.query.orderDateTo))
-            : undefined
-        const search =
-            typeof req.query.search === 'string' ? req.query.search : ''
+
+        const df = first<string>(req.query.orderDateFrom)
+        const dt = first<string>(req.query.orderDateTo)
+        const dateFrom = df ? new Date(String(df)) : undefined
+        const dateTo = dt ? new Date(String(dt)) : undefined
+
+        const searchFirst = first<string>(req.query.search)
+        const search = typeof searchFirst === 'string' ? searchFirst : ''
 
         const match: Record<string, any> = {}
-        if (status && Object.values(StatusType).includes(status as StatusType))
+        if (
+            status &&
+            Object.values(StatusType).includes(status as StatusType)
+        ) {
             match.status = status
-        if (typeof totalFrom === 'number' && !Number.isNaN(totalFrom)) {
+        }
+        if (typeof totalFrom === 'number') {
             match.totalAmount = {
                 ...(match.totalAmount || {}),
                 $gte: totalFrom,
             }
         }
-        if (typeof totalTo === 'number' && !Number.isNaN(totalTo)) {
+        if (typeof totalTo === 'number') {
             match.totalAmount = { ...(match.totalAmount || {}), $lte: totalTo }
         }
         if (dateFrom instanceof Date && !Number.isNaN(dateFrom.getTime())) {
@@ -239,7 +253,7 @@ export const getOrdersCurrentUser = async (
                 totalOrders,
                 totalPages,
                 currentPage: page,
-                pageSize: limit, 
+                pageSize: limit,
             },
         })
     } catch (error) {
