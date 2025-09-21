@@ -2,10 +2,8 @@ name: Tests
 
 on:
   push:
-    branches:
-      - '**'
-    tags:
-      - '**'
+    branches: ['**']
+    tags: ['**']
 
 env:
   DIR_TESTS: /tmp/tests-bad-server
@@ -16,7 +14,7 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
-      - name: Set up GitHub Actions
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Use Node.js 18.x
@@ -24,11 +22,50 @@ jobs:
         with:
           node-version: 18.x
 
-      - name: Get testing lib
-        run: set -eu && git clone --depth 1 $REP_TESTS $DIR_TESTS
+      - name: Install helpers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
 
-      - name: Start project
-        run: bash $DIR_TESTS/bin/start_project.sh
+      - name: Clone tests repo
+        run: git clone --depth 1 "$REP_TESTS" "$DIR_TESTS"
 
-      - name: Run tests
-        run: bash $DIR_TESTS/bin/run.sh
+      - name: Start project (from tests repo script)
+        run: bash "$DIR_TESTS/bin/start_project.sh"
+
+      - name: Seed users (idempotent)
+        run: |
+          docker compose exec -T backend npm run seed || true
+
+      - name: Wait for services (nginx -> backend)
+        run: |
+          for i in $(seq 1 60); do curl -sf http://localhost:3000/health >/dev/null && break; sleep 1; done
+          for i in $(seq 1 60); do curl -sf http://localhost:3000/api/health >/dev/null && break; sleep 1; done
+
+      - name: Print nginx & env (diagnostics)
+        run: |
+          docker compose exec -T server nginx -T | sed -n '1,220p'
+          docker compose exec -T backend node -e "console.log('UPLOAD_PATH=',process.env.UPLOAD_PATH,' CORS_ORIGINS=',process.env.CORS_ORIGINS)"
+
+      - name: Smoke checks
+        run: |
+          set -eux
+          BASE=http://localhost:3000
+
+          AT=$(curl -s -H "Content-Type: application/json" -X POST $BASE/api/auth/login -d '{"email":"admin@mail.ru","password":"password"}' | jq -r .accessToken)
+          UT=$(curl -s -H "Content-Type: application/json" -X POST $BASE/api/auth/login -d '{"email":"u1@test.com","password":"password1"}' | jq -r .accessToken || echo "")
+
+          test -n "$AT"
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $AT" "$BASE/orders?limit=200"); echo "orders admin => $code"; test "$code" = "200" || exit 1
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $UT" "$BASE/orders?limit=5");   echo "orders user  => $code"; test "$code" = "403" || exit 1
+
+          printf '\x89PNG\r\n\x1a\n' > ok.png; dd if=/dev/zero bs=1 count=4096 of=pad.bin status=none; cat pad.bin >> ok.png
+          code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@ok.png" $BASE/upload); echo "upload ok => $code"; test "$code" = "201" || exit 1
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" -X POST "$BASE/orders" \
+            -d '{"items":["650000000000000000000000"],"payment":"card","email":"u@a.a","phone":"123","address":"ул."}')
+          echo "create invalid phone => $code"; test "$code" = "400" || exit 1
+
+      - name: Run tests (from tests repo)
+        run: bash "$DIR_TESTS/bin/run.sh"
