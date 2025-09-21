@@ -1,5 +1,6 @@
 import { Joi, celebrate, Segments } from 'celebrate'
 import { Types } from 'mongoose'
+import type { RequestHandler } from 'express'
 
 export const phoneRegExp = /^\+?\d[\d\s()-]{3,20}$/
 
@@ -15,26 +16,72 @@ const objId = (value: string, helpers: any) => {
 
 const SAFE_SEARCH_RX = /^[\p{L}\p{N}\s.,+\-()]*$/u
 
-export const validateOrdersQuery = celebrate({
-    [Segments.QUERY]: Joi.object({
-        page: Joi.number().integer().min(1).default(1),
-        limit: Joi.number()
-            .integer()
-            .min(1)
-            .default(10)
-            .custom((v) => (v > 10 ? 10 : v)),
-        sortField: Joi.string()
-            .valid('createdAt', 'totalAmount', 'orderNumber', 'status')
-            .default('createdAt'),
-        sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
-        status: Joi.string().trim().max(32),
-        totalAmountFrom: Joi.number().min(0),
-        totalAmountTo: Joi.number().min(0),
-        orderDateFrom: Joi.date().iso(),
-        orderDateTo: Joi.date().iso(),
-        search: Joi.string().trim().max(64).pattern(SAFE_SEARCH_RX),
-    }).unknown(true), // ← разрешаем «лишние» безопасные параметры
-})
+export const validateOrdersQuery: RequestHandler = (req, _res, next) => {
+    const q = (req.query as any) || {}
+
+    const rawLimit = Number(q.limit)
+    const limit =
+        Number.isFinite(rawLimit) && rawLimit > 0 ? Math.floor(rawLimit) : 10
+    q.limit = Math.min(Math.max(limit, 1), 10)
+
+    const rawPage = Number(q.page)
+    q.page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1
+
+    const ALLOWED_SORT_FIELDS = new Set([
+        'createdAt',
+        'totalAmount',
+        'orderNumber',
+        'status',
+    ])
+    q.sortField = ALLOWED_SORT_FIELDS.has(String(q.sortField))
+        ? String(q.sortField)
+        : 'createdAt'
+
+    q.sortOrder =
+        String(q.sortOrder) === 'asc' || String(q.sortOrder) === 'desc'
+            ? String(q.sortOrder)
+            : 'desc'
+
+    if (typeof q.status === 'string') {
+        const s = q.status.trim()
+        if (!s || s.length > 32) delete q.status
+        else q.status = s
+    } else {
+        delete q.status
+    }
+
+    const numOrDrop = (v: any) =>
+        Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : null
+
+    const from = numOrDrop(q.totalAmountFrom)
+    const to = numOrDrop(q.totalAmountTo)
+    if (from === null) delete q.totalAmountFrom
+    else q.totalAmountFrom = from
+    if (to === null) delete q.totalAmountTo
+    else q.totalAmountTo = to
+
+    const dateOrDrop = (v: any) => {
+        const d = new Date(v)
+        return isNaN(d.getTime()) ? null : d.toISOString()
+    }
+    const dFrom = dateOrDrop(q.orderDateFrom)
+    const dTo = dateOrDrop(q.orderDateTo)
+    if (dFrom === null) delete q.orderDateFrom
+    else q.orderDateFrom = dFrom
+    if (dTo === null) delete q.orderDateTo
+    else q.orderDateTo = dTo
+
+    if (typeof q.search === 'string') {
+        const s = q.search.trim()
+        if (!s || s.length > 64 || !SAFE_SEARCH_RX.test(s)) delete q.search
+        else q.search = s
+    } else {
+        delete q.search
+    }
+
+    req.query = q
+    next()
+}
 
 export const validateUsersQuery = celebrate({
     [Segments.QUERY]: Joi.object({
