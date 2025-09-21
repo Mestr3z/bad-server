@@ -2,80 +2,27 @@ name: Tests
 
 on:
   push:
-    branches: ['**']
-    tags: ['**']
-
+    branches:
+      - '**'
+    tags:
+      - '**'
 env:
   DIR_TESTS: /tmp/tests-bad-server
   REP_TESTS: https://github.com/Yandex-Practicum/tests-bad-server.git
   REPO: ${{ github.event.repository.name }}
-
 jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Use Node.js 18.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18.x
-
-      - name: Install helpers
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq curl
-
-      - name: Clone tests repo
-        run: git clone --depth 1 "$REP_TESTS" "$DIR_TESTS"
-
-      - name: Start project (from tests repo script)
-        run: bash "$DIR_TESTS/bin/start_project.sh"
-
-      - name: Seed users (idempotent)
-        run: docker compose exec -T backend npm run seed || true
-
-      - name: Wait for services (nginx -> backend)
-        run: |
-          for i in $(seq 1 60); do curl -sf http://localhost:3000/health >/dev/null && break; sleep 1; done
-          for i in $(seq 1 60); do curl -sf http://localhost:3000/api/health >/dev/null && break; sleep 1; done
-
-      - name: Print nginx & env (diagnostics)
-        run: |
-          docker compose exec -T server nginx -T | sed -n '1,220p'
-          docker compose exec -T backend node -e "console.log('UPLOAD_PATH=',process.env.UPLOAD_PATH,' CORS_ORIGINS=',process.env.CORS_ORIGINS)"
-
-      - name: Smoke checks
-        run: |
-          set -eux
-          BASE=http://localhost:3000
-
-          AT=$(curl -s -H "Content-Type: application/json" -X POST $BASE/api/auth/login \
-            -d '{"email":"admin@mail.ru","password":"password"}' | jq -r .accessToken)
-          UT=$(curl -s -H "Content-Type: application/json" -X POST $BASE/api/auth/login \
-            -d '{"email":"user1@mail.ru","password":"password1"}' | jq -r .accessToken || echo "")
-
-          test -n "$AT"
-
-          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $AT" "$BASE/orders?limit=200"); echo "orders admin => $code"; test "$code" = "200"
-
-          if [ -n "$UT" ]; then
-            code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $UT" "$BASE/orders?limit=5"); echo "orders user  => $code"; test "$code" = "403"
-          else
-            echo "skip user orders check (no UT)"
-          fi
-
-          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAucB9W+R8+UAAAAASUVORK5CYII=' | base64 -d >/tmp/ok.png
-          dd if=/dev/zero bs=1 count=3000 status=none >>/tmp/ok.png
-
-          code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@/tmp/ok.png" $BASE/upload); echo "upload ok => $code"; test "$code" = "201"
-
-          printf '\x89PNG\r\n\x1a\n' >/tmp/tiny.png
-          code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@/tmp/tiny.png" $BASE/upload); echo "tiny => $code"; test "$code" = "400"
-
-          printf 'not_an_image' >/tmp/bad.bin
-          code=$(curl -s -o /dev/null -w '%{http_code}' -F "file=@/tmp/bad.bin;type=image/png" $BASE/upload); echo "fake png => $code"; test "$code" = "400"
-
-      - name: Run tests (from tests repo)
-        run: bash "$DIR_TESTS/bin/run.sh"
+    - name: Set up GitHub Actions
+      uses: actions/checkout@v4
+    - name: Use Node.js 18.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18.x
+    - name: Get testing lib
+      run: set -eu && git clone --depth 1 $REP_TESTS $DIR_TESTS
+    - name: Start project
+      run: bash $DIR_TESTS/bin/start_project.sh
+    - name: Run tests
+      run: bash $DIR_TESTS/bin/run.sh
