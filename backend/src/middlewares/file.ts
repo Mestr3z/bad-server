@@ -1,11 +1,4 @@
 import multer from 'multer'
-import path from 'path'
-import fs from 'fs'
-import crypto from 'crypto'
-import { UPLOAD_PATH } from '../config'
-
-const dest = path.join(process.cwd(), 'src', 'public', UPLOAD_PATH)
-fs.mkdirSync(dest, { recursive: true })
 
 const ALLOWED_MIME = new Set([
     'image/png',
@@ -16,23 +9,7 @@ const ALLOWED_MIME = new Set([
     'image/avif',
 ])
 
-const storage = multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, dest),
-    filename: (_req, file, cb) => {
-        const ext = (path.extname(file.originalname || '') || '').toLowerCase()
-        const safe = [
-            '.png',
-            '.jpg',
-            '.jpeg',
-            '.webp',
-            '.gif',
-            '.avif',
-        ].includes(ext)
-            ? ext
-            : ''
-        cb(null, crypto.randomUUID().replace(/-/g, '') + safe)
-    },
-})
+const storage = multer.memoryStorage()
 
 const file = multer({
     storage,
