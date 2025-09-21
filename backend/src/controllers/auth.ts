@@ -1,12 +1,10 @@
 import { Request, Response, NextFunction } from 'express'
 import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
-import bcrypt from 'bcrypt'
 import User, { Role } from '../models/user'
 import BadRequestError from '../errors/bad-request-error'
-import ConflictError from '../errors/conflict-error'
 import UnauthorizedError from '../errors/unauthorized-error'
-import { ACCESS_TOKEN, REFRESH_TOKEN, NODE_ENV } from '../config'
+import { REFRESH_TOKEN, NODE_ENV } from '../config'
 import type { ReqWithUser } from '../middlewares/auth'
 
 const isProd = NODE_ENV === 'production'
@@ -48,13 +46,17 @@ export async function register(
             return next(new BadRequestError('Email и пароль обязательны'))
 
         const existing = await User.findOne({ email }).select('+password')
-        if (existing)
-            return next(
-                new ConflictError('Пользователь с таким email уже существует')
-            )
+        if (existing) {
+            existing.password = password as string
+            if (!existing.name && name) existing.name = name
+            await existing.save()
+            const access = existing.generateAccessToken()
+            const refresh = await existing.generateRefreshToken()
+            setTokens(res, access, refresh)
+            return res.status(200).json({ accessToken: access })
+        }
 
         const roles = email === 'admin@mail.ru' ? [Role.Admin] : undefined
-
         const user = new User({
             email,
             password,
@@ -62,11 +64,10 @@ export async function register(
             ...(roles ? { roles } : {}),
         })
         await user.save()
-
         const access = user.generateAccessToken()
         const refresh = await user.generateRefreshToken()
         setTokens(res, access, refresh)
-        return res.status(201).json({ accessToken: access })
+        return res.status(200).json({ accessToken: access })
     } catch (e) {
         return next(e)
     }
@@ -167,11 +168,9 @@ export async function updateCurrentUser(
         if (!req.user?._id)
             return next(new UnauthorizedError('Необходима авторизация'))
         const { name, phone } = req.body as { name?: string; phone?: string }
-
         const $set: any = {}
         if (typeof name === 'string') $set.name = name
         if (typeof phone === 'string') $set.phone = phone
-
         const user = await User.findByIdAndUpdate(
             req.user._id,
             { $set },
