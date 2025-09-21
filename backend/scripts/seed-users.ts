@@ -1,16 +1,49 @@
 import 'dotenv/config'
 import mongoose from 'mongoose'
-import User from '../src/models/user'
+import bcrypt from 'bcryptjs'
+import User, { Role } from '../src/models/user'
 import { DB_ADDRESS } from '../src/config'
 
-async function run() {
-  await mongoose.connect(DB_ADDRESS)
-  await User.deleteMany({})
-  await User.create([
-    { email: 'admin@mail.ru', password: 'password', name: 'Admin', roles: ['admin'] },
-    { email: 'user1@mail.ru', password: 'password1', name: 'User1', roles: ['customer'] },
-  ])
-  await mongoose.disconnect()
-  process.exit(0)
+const run = async () => {
+    await mongoose.connect(DB_ADDRESS)
+
+    const adminEmail = 'admin@mail.ru'
+    const adminPass = 'password'
+    const userEmail = 'u1@test.com'
+    const userPass = 'password1'
+
+    const adminHash = await bcrypt.hash(adminPass, 10)
+    const userHash = await bcrypt.hash(userPass, 10)
+
+    await User.updateOne(
+        { email: adminEmail },
+        {
+            $setOnInsert: {
+                email: adminEmail,
+                password: adminHash,
+                name: 'Admin',
+                roles: [Role.Admin],
+            },
+        },
+        { upsert: true }
+    )
+
+    await User.updateOne(
+        { email: userEmail },
+        {
+            $setOnInsert: {
+                email: userEmail,
+                password: userHash,
+                name: 'User One',
+                roles: [],
+            },
+        },
+        { upsert: true }
+    )
+
+    await mongoose.disconnect()
 }
-run()
+run().catch((e) => {
+    console.error(e)
+    process.exit(1)
+})

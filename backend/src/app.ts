@@ -84,8 +84,6 @@ app.use(cookieParser())
 app.use(urlencoded({ extended: false }))
 app.use(json({ limit: '1mb' }))
 
-app.use(serveStatic(path.join(__dirname, 'public')))
-
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 
@@ -102,12 +100,12 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
 
 app.use('/api/orders', orderRouter)
 app.use('/orders', orderRouter)
-
 app.use('/api/upload', uploadRouter)
 app.use('/upload', uploadRouter)
-
 app.use('/api', routes)
 app.use('/', routes)
+
+app.use(serveStatic(path.join(__dirname, 'public')))
 
 app.use((req, res, next) => {
     if (res.headersSent) return next()

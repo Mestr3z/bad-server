@@ -122,7 +122,6 @@ export const validateObjId = celebrate({
     }),
 })
 
-// 🔸 Добавлено: валидация id для customers
 export const validateCustomerId = celebrate({
     [Segments.PARAMS]: Joi.object({
         id: Joi.string().required().custom(objId),

@@ -45,11 +45,13 @@ services:
       - internal
     depends_on:
       - mongo
+    command: sh -c "npm run seed && npx nodemon -L src/app.ts"
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+
 
   server:
     build:
