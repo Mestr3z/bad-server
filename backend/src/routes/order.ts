@@ -46,10 +46,10 @@ const normalizeQuery: RequestHandler = (req, _res, next) => {
 }
 
 router.get('*', normalizeQuery)
+
 router.get('/', auth, roleGuardMiddleware(Role.Admin), getOrders)
 
 router.get('/me', auth, withUser(getOrdersCurrentUser))
-
 router.get('/me/:orderNumber', auth, withUser(getOrderCurrentUserByNumber))
 
 router.get(
