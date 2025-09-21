@@ -28,21 +28,19 @@ const withUser =
 
 const normalizeLimit: RequestHandler = (req, _res, next) => {
     type QueryShape = Record<string, unknown> & { limit?: unknown }
-
     const q: QueryShape = (req.query ?? {}) as QueryShape
 
-    const rawVal: unknown = Array.isArray(q.limit) ? q.limit[0] : q.limit
+    const raw: unknown = Array.isArray(q.limit) ? q.limit[0] : q.limit
+    let n: number
 
-    let parsed: number
-    if (typeof rawVal === 'number') parsed = rawVal
-    else if (typeof rawVal === 'string') parsed = Number(rawVal)
-    else parsed = Number(rawVal as any)
+    if (typeof raw === 'number') n = raw
+    else if (typeof raw === 'string') n = Number(raw.trim())
+    else n = Number(raw as any)
 
-    const base: number =
-        Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 10
-    const clamped: number = Math.min(Math.max(base, 1), 10)
+    const base = Number.isFinite(n) && n > 0 ? Math.floor(n) : 10
+    const clamped = Math.min(Math.max(base, 1), 10)
 
-    ;(req as any).query = { ...q, limit: clamped }
+    ;(req as any).query = { ...q, limit: String(clamped) }
 
     next()
 }
@@ -58,23 +56,19 @@ router.get(
 
 router.get('/me', auth, withUser(getOrdersCurrentUser))
 router.get('/me/:orderNumber', auth, withUser(getOrderCurrentUserByNumber))
-
 router.get(
     '/:orderNumber',
     auth,
     roleGuardMiddleware(Role.Admin),
     getOrderByNumber
 )
-
 router.post('/', validateOrderBody, withUser(createOrder))
-
 router.patch(
     '/:orderNumber',
     auth,
     roleGuardMiddleware(Role.Admin),
     updateOrder
 )
-
 router.delete('/:id', auth, roleGuardMiddleware(Role.Admin), deleteOrder)
 
 export default router
