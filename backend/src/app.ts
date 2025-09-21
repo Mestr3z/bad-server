@@ -12,9 +12,11 @@ import slowDown from 'express-slow-down'
 import mongoSanitize from 'express-mongo-sanitize'
 import compression from 'compression'
 import csrf from 'csurf'
+
 import { DB_ADDRESS, CORS_ORIGINS, PORT, NODE_ENV } from './config'
 import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
+
 import routes from './routes'
 import orderRouter from './routes/order'
 
@@ -22,18 +24,19 @@ const app = express()
 const isProd = NODE_ENV === 'production'
 
 const DEFAULT_ORIGIN = 'http://localhost:5173'
-const originList = (CORS_ORIGINS || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-if (!originList.includes(DEFAULT_ORIGIN)) originList.push(DEFAULT_ORIGIN)
-const allowSet = new Set(originList)
+const allow = new Set(
+    (CORS_ORIGINS || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+)
+if (!allow.has(DEFAULT_ORIGIN)) allow.add(DEFAULT_ORIGIN)
 
 app.use(
     cors({
         origin: (origin, cb) => {
             if (!origin) return cb(null, true)
-            if (allowSet.has(origin)) return cb(null, true)
+            if (allow.has(origin)) return cb(null, true)
             return cb(new Error('CORS'))
         },
         credentials: true,
@@ -41,9 +44,10 @@ app.use(
 )
 
 app.use((req, res, next) => {
-    const o = (req.headers.origin as string | undefined) || DEFAULT_ORIGIN
-    if (!res.getHeader('Access-Control-Allow-Origin')) {
-        res.setHeader('Access-Control-Allow-Origin', o)
+    const reqOrigin =
+        (req.headers.origin as string | undefined) || DEFAULT_ORIGIN
+    if (allow.has(reqOrigin) && !res.getHeader('Access-Control-Allow-Origin')) {
+        res.setHeader('Access-Control-Allow-Origin', reqOrigin)
     }
     res.setHeader('Vary', 'Origin')
     next()
@@ -81,7 +85,6 @@ app.use(mongoSanitize())
 app.use(cookieParser())
 app.use(urlencoded({ extended: false }))
 app.use(json({ limit: '1mb' }))
-
 app.use(serveStatic(path.join(__dirname, 'public')))
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
@@ -98,10 +101,10 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
     res.json({ csrfToken: (req as any).csrfToken() })
 })
 
-app.use('/orders', orderRouter)
 app.use('/api/orders', orderRouter)
-app.use(routes)
 app.use('/api', routes)
+app.use('/orders', orderRouter)
+app.use('/', routes)
 
 app.use((req, res, next) => {
     if (res.headersSent) return next()
@@ -114,7 +117,7 @@ app.use(errorHandler)
 const bootstrap = async () => {
     try {
         await mongoose.connect(DB_ADDRESS)
-        await app.listen(PORT || 3000, () => {})
+        await app.listen(Number(PORT) || 3000, () => {})
     } catch (error) {
         console.error(error)
     }
