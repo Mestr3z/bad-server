@@ -19,6 +19,7 @@ import serveStatic from './middlewares/serverStatic'
 
 import routes from './routes'
 import orderRouter from './routes/order'
+import uploadRouter from './routes/upload'
 
 const app = express()
 const isProd = NODE_ENV === 'production'
@@ -42,7 +43,6 @@ app.use(
         credentials: true,
     })
 )
-
 app.use((req, res, next) => {
     const reqOrigin =
         (req.headers.origin as string | undefined) || DEFAULT_ORIGIN
@@ -63,7 +63,6 @@ app.use(
 app.use(hpp())
 app.use(compression())
 app.set('trust proxy', 1)
-
 app.use(
     rateLimit({
         windowMs: 60_000,
@@ -81,7 +80,6 @@ app.use(
     })
 )
 app.use(mongoSanitize())
-
 app.use(cookieParser())
 app.use(urlencoded({ extended: false }))
 app.use(json({ limit: '1mb' }))
@@ -102,8 +100,10 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
 })
 
 app.use('/api/orders', orderRouter)
-app.use('/api', routes)
 app.use('/orders', orderRouter)
+app.use('/api/upload', uploadRouter)
+app.use('/upload', uploadRouter)
+app.use('/api', routes)
 app.use('/', routes)
 
 app.use((req, res, next) => {
