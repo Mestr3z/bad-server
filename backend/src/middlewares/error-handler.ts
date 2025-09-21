@@ -8,8 +8,9 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     try {
         console.error(err)
     } catch {}
-
-    if (res.headersSent) return
+    if (res.headersSent) {
+        return
+    }
 
     res.status(statusCode).json({ message })
 }
