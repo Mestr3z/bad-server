@@ -27,9 +27,29 @@ const withUser =
         h(req as ReqWithUser, res, next)
 
 const normalizeLimit: RequestHandler = (req, _res, next) => {
-    const raw = Number((req.query as any).limit)
-    const val = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 10
-    ;(req.query as any).limit = Math.min(Math.max(val, 1), 10) // число
+    const q = req.query as Record<string, any>
+
+    const pickFirst = (v: unknown) =>
+        Array.isArray(v) ? (v.length ? v[0] : undefined) : v
+
+    {
+        const raw = pickFirst(q.limit)
+        let num = Number(raw)
+        if (!Number.isFinite(num) || num <= 0) num = 10
+        num = Math.trunc(num)
+        if (num < 1) num = 1
+        if (num > 10) num = 10
+        q.limit = num
+    }
+
+    {
+        const raw = pickFirst(q.page)
+        let num = Number(raw)
+        if (!Number.isFinite(num) || num < 1) num = 1
+        num = Math.trunc(num)
+        q.page = num
+    }
+
     next()
 }
 
@@ -41,21 +61,26 @@ router.get(
     validateOrdersQuery,
     getOrders
 )
+
 router.get('/me', auth, withUser(getOrdersCurrentUser))
 router.get('/me/:orderNumber', auth, withUser(getOrderCurrentUserByNumber))
+
 router.get(
     '/:orderNumber',
     auth,
     roleGuardMiddleware(Role.Admin),
     getOrderByNumber
 )
+
 router.post('/', validateOrderBody, withUser(createOrder))
+
 router.patch(
     '/:orderNumber',
     auth,
     roleGuardMiddleware(Role.Admin),
     updateOrder
 )
+
 router.delete('/:id', auth, roleGuardMiddleware(Role.Admin), deleteOrder)
 
 export default router
