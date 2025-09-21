@@ -18,7 +18,6 @@ import {
     updateOrder,
     deleteOrder,
 } from '../controllers/order'
-import BadRequestError from '../errors/bad-request-error'
 
 const router = Router()
 
@@ -30,16 +29,7 @@ const withUser =
 const normalizeLimit: RequestHandler = (req, _res, next) => {
     const raw = Number((req.query as any).limit)
     const val = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 10
-    ;(req.query as any).limit = String(Math.min(Math.max(val, 1), 10))
-    next()
-}
-
-const rejectMongoOperators: RequestHandler = (req, _res, next) => {
-    for (const key of Object.keys(req.query)) {
-        if (key.includes('$') || key.includes('.')) {
-            return next(new BadRequestError('Некорректный параметр запроса'))
-        }
-    }
+    ;(req.query as any).limit = Math.min(Math.max(val, 1), 10) // число
     next()
 }
 
@@ -47,31 +37,25 @@ router.get(
     '/',
     auth,
     roleGuardMiddleware(Role.Admin),
-    rejectMongoOperators,
     normalizeLimit,
     validateOrdersQuery,
     getOrders
 )
-
 router.get('/me', auth, withUser(getOrdersCurrentUser))
 router.get('/me/:orderNumber', auth, withUser(getOrderCurrentUserByNumber))
-
 router.get(
     '/:orderNumber',
     auth,
     roleGuardMiddleware(Role.Admin),
     getOrderByNumber
 )
-
 router.post('/', validateOrderBody, withUser(createOrder))
-
 router.patch(
     '/:orderNumber',
     auth,
     roleGuardMiddleware(Role.Admin),
     updateOrder
 )
-
 router.delete('/:id', auth, roleGuardMiddleware(Role.Admin), deleteOrder)
 
 export default router
