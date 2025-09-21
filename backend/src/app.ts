@@ -67,18 +67,21 @@ app.use(hpp())
 app.use(compression())
 app.set('trust proxy', 1)
 
-app.use(
-    rateLimit({
-        windowMs: 60_000,
-        max: 50,
-        standardHeaders: true,
-        legacyHeaders: false,
-        message: { message: 'Too many requests' },
-        skip: (req) =>
-            req.path.startsWith('/orders') ||
-            req.path.startsWith('/api/orders'),
-    })
-)
+const limiter = rateLimit({
+    windowMs: 60_000,
+    max: 50,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Too many requests' },
+    skip: (req) => {
+        const p = req.path || ''
+        if (p === '/health' || p === '/api/health') return true
+        if (p === '/csrf-token' || p === '/api/csrf-token') return true
+        if (p.startsWith('/images/')) return true // статика
+        return false
+    },
+})
+app.use(limiter)
 
 app.use(
     slowDown({
@@ -106,6 +109,23 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
     res.json({ csrfToken: (req as any).csrfToken() })
 })
 
+app.use((req, res, next) => {
+    const t0 = Date.now()
+    res.on('finish', () => {
+        if (req.path.startsWith('/orders')) {
+            console.log(
+                '[ORDERS]',
+                req.method,
+                req.originalUrl,
+                '→',
+                res.statusCode,
+                `${Date.now() - t0}ms`
+            )
+        }
+    })
+    next()
+})
+
 app.use('/api', routes)
 app.use('/api/orders', orderRouter)
 app.use('/orders', orderRouter)
@@ -117,9 +137,9 @@ app.use('/api/files', uploadRouter)
 app.use('/files', uploadRouter)
 
 app.use(serveStatic(path.join(__dirname, 'public')))
-
 app.use(celebrateErrors())
 app.use(errorHandler)
+
 app.use((req, res) => {
     if (res.headersSent) return
     res.status(404).json({ message: 'Not found' })
