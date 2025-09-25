@@ -4,17 +4,8 @@ import jwt from 'jsonwebtoken'
 import User, { Role } from '../models/user'
 import BadRequestError from '../errors/bad-request-error'
 import UnauthorizedError from '../errors/unauthorized-error'
-import { REFRESH_TOKEN, NODE_ENV } from '../config'
+import { REFRESH_TOKEN } from '../config'
 import type { ReqWithUser } from '../middlewares/auth'
-
-const isProd = NODE_ENV === 'production'
-
-const cookieOpts = {
-    httpOnly: true,
-    sameSite: 'lax' as const,
-    secure: isProd,
-    path: '/',
-}
 
 function hashRT(token: string) {
     return crypto
@@ -23,10 +14,17 @@ function hashRT(token: string) {
         .digest('hex')
 }
 
+const baseCookieOpts = {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure: REFRESH_TOKEN.cookie.options.secure === true,
+    path: '/',
+}
+
 function setTokens(res: Response, accessToken: string, refreshToken: string) {
-    res.cookie('accessToken', accessToken, cookieOpts)
+    res.cookie('accessToken', accessToken, baseCookieOpts)
     res.cookie(REFRESH_TOKEN.cookie.name, refreshToken, {
-        ...cookieOpts,
+        ...baseCookieOpts,
         maxAge: REFRESH_TOKEN.cookie.options.maxAge,
     })
 }
