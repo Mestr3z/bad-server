@@ -18,6 +18,8 @@ import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
 
 import routes from './routes'
+import orderRouter from './routes/order'
+import uploadRouter from './routes/upload'
 
 const app = express()
 
@@ -74,6 +76,11 @@ const limiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: 'Too many requests' },
+    skip: (req) => {
+        if (req.method === 'HEAD') return true
+        if (req.path === '/health' || req.path === '/api/health') return true
+        return false
+    },
 })
 app.use(limiter)
 
@@ -101,6 +108,17 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
 })
 
 app.use('/api', routes)
+
+app.use('/api/orders', orderRouter)
+app.use('/orders', orderRouter)
+app.use('/api/order', orderRouter)
+app.use('/order', orderRouter)
+
+app.use('/api/upload', uploadRouter)
+app.use('/upload', uploadRouter)
+app.use('/api/files', uploadRouter)
+app.use('/files', uploadRouter)
+
 app.use(serveStatic(path.join(__dirname, 'public')))
 app.use(celebrateErrors())
 app.use(errorHandler)
