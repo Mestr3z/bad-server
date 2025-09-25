@@ -1,8 +1,5 @@
 import { Router, type RequestHandler } from 'express'
-import {
-    validateOrdersQuery,
-    validateOrderBody,
-} from '../middlewares/validations'
+import { validateOrderBody } from '../middlewares/validations'
 import {
     auth,
     roleGuardMiddleware,
@@ -19,39 +16,42 @@ import {
     deleteOrder,
 } from '../controllers/order'
 
+import { clampOrdersLimit10 } from '../middlewares/normalizeLimit'
+import { guardOrdersQuery } from '../middlewares/guardOrdersQuery'
+
 const router = Router()
 
 const withUser =
-    (h: (req: ReqWithUser, ...args: any[]) => any): RequestHandler =>
+    (h: (req: ReqWithUser, ...a: any[]) => any): RequestHandler =>
     (req, res, next) =>
         h(req as ReqWithUser, res, next)
 
-const adminOnly: RequestHandler = (req, res, next) => {
-    const user = (req as unknown as ReqWithUser).user
-    if (!user?.roles?.includes(Role.Admin)) {
-        return res.status(403).json({ message: 'Forbidden' })
-    }
-    next()
-}
+const adminListGuards: RequestHandler[] = [
+    auth,
+    roleGuardMiddleware(Role.Admin),
+    clampOrdersLimit10,
+    guardOrdersQuery,
+]
 
-const normalizeLimit: RequestHandler = (req, _res, next) => {
-    const raw = Number((req.query as any).limit)
-    const val = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 10
-    ;(req.query as any).limit = String(Math.min(Math.max(val, 1), 10))
-    next()
-}
-
-router.get('/', auth, adminOnly, normalizeLimit, validateOrdersQuery, getOrders)
+router.get('/', ...adminListGuards, getOrders)
+router.get('/all', ...adminListGuards, getOrders)
 
 router.get('/me', auth, withUser(getOrdersCurrentUser))
 router.get('/me/:orderNumber', auth, withUser(getOrderCurrentUserByNumber))
-
-router.get('/:orderNumber', auth, adminOnly, getOrderByNumber)
+router.get(
+    '/:orderNumber',
+    auth,
+    roleGuardMiddleware(Role.Admin),
+    getOrderByNumber
+)
 
 router.post('/', validateOrderBody, withUser(createOrder))
-
-router.patch('/:orderNumber', auth, adminOnly, updateOrder)
-
-router.delete('/:id', auth, adminOnly, deleteOrder)
+router.patch(
+    '/:orderNumber',
+    auth,
+    roleGuardMiddleware(Role.Admin),
+    updateOrder
+)
+router.delete('/:id', auth, roleGuardMiddleware(Role.Admin), deleteOrder)
 
 export default router

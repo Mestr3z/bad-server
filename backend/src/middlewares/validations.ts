@@ -18,34 +18,32 @@ const SAFE_SEARCH_RX = /^[\p{L}\p{N}\s.,+\-()]*$/u
 export const validateOrdersQuery = celebrate({
     [Segments.QUERY]: Joi.object({
         page: Joi.number().integer().min(1).default(1),
-        limit: Joi.number()
-            .integer()
-            .min(1)
-            .default(10)
-            .custom((v) => (v > 10 ? 10 : v)),
+        limit: Joi.number().integer().min(1).max(10).default(10),
+
         sortField: Joi.string()
             .valid('createdAt', 'totalAmount', 'orderNumber', 'status')
             .default('createdAt'),
         sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
+
         status: Joi.string().trim().max(32),
         totalAmountFrom: Joi.number().min(0),
         totalAmountTo: Joi.number().min(0),
         orderDateFrom: Joi.date().iso(),
         orderDateTo: Joi.date().iso(),
         search: Joi.string().trim().max(64).pattern(SAFE_SEARCH_RX),
-    }).unknown(false),
+    })
+        .unknown(true)
+        .prefs({ convert: true, abortEarly: false }),
 })
 
 export const validateUsersQuery = celebrate({
     [Segments.QUERY]: Joi.object({
         page: Joi.number().integer().min(1).default(1),
-        limit: Joi.number()
-            .integer()
-            .min(1)
-            .default(10)
-            .custom((v) => (v > 10 ? 10 : v)),
+        limit: Joi.number().integer().min(1).max(10).default(10),
         search: Joi.string().trim().max(64).pattern(SAFE_SEARCH_RX),
-    }).unknown(false),
+    })
+        .unknown(false)
+        .prefs({ convert: true, abortEarly: false }),
 })
 
 export const validateOrderBody = celebrate({
@@ -58,6 +56,7 @@ export const validateOrderBody = celebrate({
                 'array.min': 'Не указаны товары',
                 'any.required': 'Не указаны товары',
             }),
+
         payment: Joi.string()
             .valid(...Object.values(PaymentType))
             .required()
@@ -66,18 +65,22 @@ export const validateOrderBody = celebrate({
                     'Указано не валидное значение для способа оплаты, возможные значения - "card", "online"',
                 'any.required': 'Не указан способ оплаты',
             }),
+
         email: Joi.string().email().required().max(254).messages({
             'string.email': 'Поле "email" должно быть валидным email-адресом',
             'any.required': 'Не указан email',
         }),
+
         phone: Joi.string().pattern(phoneRegExp).required().messages({
             'string.pattern.base':
                 'Поле "phone" должно быть валидным телефоном.',
             'any.required': 'Не указан телефон',
         }),
+
         address: Joi.string().required().max(512).messages({
             'any.required': 'Не указан адрес',
         }),
+
         comment: Joi.string().allow('').max(2000),
     }).required(),
 })
@@ -122,7 +125,6 @@ export const validateObjId = celebrate({
     }),
 })
 
-// 🔸 Добавлено: валидация id для customers
 export const validateCustomerId = celebrate({
     [Segments.PARAMS]: Joi.object({
         id: Joi.string().required().custom(objId),
@@ -157,11 +159,7 @@ export const validateAuthentication = celebrate({
 export const validateSearchParams = celebrate({
     [Segments.QUERY]: Joi.object({
         page: Joi.number().integer().min(1).default(1),
-        limit: Joi.number()
-            .integer()
-            .min(1)
-            .default(10)
-            .custom((v) => (v > 10 ? 10 : v)),
+        limit: Joi.number().integer().min(1).max(10).default(10),
         search: Joi.string().trim().max(64).pattern(SAFE_SEARCH_RX),
         category: Joi.string().trim().max(64),
         priceFrom: Joi.number().min(0),
@@ -170,5 +168,7 @@ export const validateSearchParams = celebrate({
             .valid('createdAt', 'price', 'title')
             .default('createdAt'),
         sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
-    }).unknown(false),
+    })
+        .unknown(false)
+        .prefs({ convert: true, abortEarly: false }),
 })
