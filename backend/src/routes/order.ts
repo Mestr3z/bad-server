@@ -15,6 +15,7 @@ import {
     updateOrder,
     deleteOrder,
 } from '../controllers/order'
+
 import { clampOrdersLimit10 } from '../middlewares/normalizeLimit'
 
 const router = Router()
@@ -31,10 +32,8 @@ router.get(
     clampOrdersLimit10,
     getOrders
 )
-
 router.get('/me', auth, withUser(getOrdersCurrentUser))
 router.get('/me/:orderNumber', auth, withUser(getOrderCurrentUserByNumber))
-
 router.get(
     '/:orderNumber',
     auth,

@@ -3,13 +3,13 @@ import jwt from 'jsonwebtoken'
 import UnauthorizedError from '../errors/unauthorized-error'
 import ForbiddenError from '../errors/forbidden-error'
 import User, { type Role } from '../models/user'
-import { ACCESS_TOKEN } from '../config'
+import { ACCESS_TOKEN, REFRESH_TOKEN } from '../config'
 
 export type ReqWithUser = Request & { user?: { _id: string; roles: Role[] } }
 
 const ACCESS_SECRET = ACCESS_TOKEN.secret || 'dev-access-secret'
 
-function pickToken(req: Request): string {
+function pickAccessToken(req: Request): string {
     const header = req.headers.authorization || ''
     const [scheme, bearer] = header.split(' ')
     if (scheme?.toLowerCase() === 'bearer' && bearer) return bearer
@@ -22,30 +22,48 @@ function pickToken(req: Request): string {
 
 export const auth: RequestHandler = async (req, _res, next) => {
     try {
-        const token = pickToken(req)
-        if (!token) return next(new UnauthorizedError('Необходима авторизация'))
+        const access = pickAccessToken(req)
+        if (access) {
+            const payload = jwt.verify(access, ACCESS_SECRET) as {
+                id?: string
+                _id?: string
+                sub?: string
+                roles?: Role[]
+            }
+            const userId = String(
+                payload.id ?? payload._id ?? payload.sub ?? ''
+            )
+            if (!userId)
+                return next(new UnauthorizedError('Необходима авторизация'))
 
-        const payload = jwt.verify(token, ACCESS_SECRET) as {
-            id?: string
-            _id?: string
-            sub?: string
-            roles?: Role[]
+            let roles = Array.isArray(payload.roles) ? payload.roles : undefined
+            if (!roles) {
+                const u = await User.findById(userId).select('roles').lean()
+                roles = (u?.roles as Role[]) ?? []
+            }
+
+            ;(req as ReqWithUser).user = { _id: userId, roles }
+            return next()
         }
 
-        const userId = String(payload.id ?? payload._id ?? payload.sub ?? '')
-        if (!userId)
-            return next(new UnauthorizedError('Необходима авторизация'))
-
-        let roles = Array.isArray(payload.roles) ? payload.roles : undefined
-        if (!roles) {
-            const u = await User.findById(userId).select('roles').lean()
-            roles = (u?.roles as Role[]) ?? []
+        const rt = (req as any).cookies?.[REFRESH_TOKEN.cookie.name]
+        if (typeof rt === 'string' && rt) {
+            const p = jwt.verify(rt, REFRESH_TOKEN.secret) as {
+                _id?: string
+                sub?: string
+            }
+            const userId = String(p._id ?? p.sub ?? '')
+            if (userId) {
+                const u = await User.findById(userId).select('roles').lean()
+                const roles = (u?.roles as Role[]) ?? []
+                ;(req as ReqWithUser).user = { _id: userId, roles }
+                return next()
+            }
         }
 
-        ;(req as ReqWithUser).user = { _id: userId, roles }
-        next()
+        return next(new UnauthorizedError('Необходима авторизация'))
     } catch {
-        next(new UnauthorizedError('Необходима авторизация'))
+        return next(new UnauthorizedError('Необходима авторизация'))
     }
 }
 
