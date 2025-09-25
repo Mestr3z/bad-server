@@ -67,19 +67,16 @@ app.use(hpp())
 app.use(compression())
 app.set('trust proxy', 1)
 
+app.get('/health', (_req, res) => res.json({ status: 'ok' }))
+app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
+
 const limiter = rateLimit({
     windowMs: 60_000,
-    max: 50,
+    max: 200,
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: 'Too many requests' },
-    skip: (req) => {
-        const p = req.path || ''
-        if (p === '/health' || p === '/api/health') return true
-        if (p === '/csrf-token' || p === '/api/csrf-token') return true
-        if (p.startsWith('/images/')) return true // статика
-        return false
-    },
+    skip: (req) => req.path === '/health' || req.path === '/api/health',
 })
 app.use(limiter)
 
@@ -96,9 +93,6 @@ app.use(cookieParser())
 app.use(urlencoded({ extended: false }))
 app.use(json({ limit: '1mb' }))
 
-app.get('/health', (_req, res) => res.json({ status: 'ok' }))
-app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
-
 const csrfProtection: RequestHandler = csrf({
     cookie: { httpOnly: true, sameSite: 'lax', secure: isProd, path: '/' },
 }) as unknown as RequestHandler
@@ -107,23 +101,6 @@ app.get('/csrf-token', csrfProtection, (req, res) => {
 })
 app.get('/api/csrf-token', csrfProtection, (req, res) => {
     res.json({ csrfToken: (req as any).csrfToken() })
-})
-
-app.use((req, res, next) => {
-    const t0 = Date.now()
-    res.on('finish', () => {
-        if (req.path.startsWith('/orders')) {
-            console.log(
-                '[ORDERS]',
-                req.method,
-                req.originalUrl,
-                '→',
-                res.statusCode,
-                `${Date.now() - t0}ms`
-            )
-        }
-    })
-    next()
 })
 
 app.use('/api', routes)
@@ -135,11 +112,9 @@ app.use('/api/upload', uploadRouter)
 app.use('/upload', uploadRouter)
 app.use('/api/files', uploadRouter)
 app.use('/files', uploadRouter)
-
 app.use(serveStatic(path.join(__dirname, 'public')))
 app.use(celebrateErrors())
 app.use(errorHandler)
-
 app.use((req, res) => {
     if (res.headersSent) return
     res.status(404).json({ message: 'Not found' })

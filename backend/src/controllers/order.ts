@@ -37,17 +37,8 @@ export const getOrders = async (
     _next: NextFunction
 ) => {
     try {
-        let pageRaw: string | null = null
-        let limitRaw: string | null = null
-        try {
-            const u = new URL(req.originalUrl, 'http://local')
-            pageRaw = u.searchParams.get('page')
-            limitRaw = u.searchParams.get('limit')
-        } catch {
-            pageRaw = typeof req.query.page === 'string' ? req.query.page : null
-            limitRaw =
-                typeof req.query.limit === 'string' ? req.query.limit : null
-        }
+        const pageRaw = first<string | number>(req.query.page)
+        const limitRaw = first<string | number>(req.query.limit)
 
         const page = clamp(
             parsePositiveInt(pageRaw, 1),
