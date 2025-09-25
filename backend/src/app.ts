@@ -76,7 +76,6 @@ const limiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: 'Too many requests' },
-    skip: (req) => req.path === '/health' || req.path === '/api/health',
 })
 app.use(limiter)
 
