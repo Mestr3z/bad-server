@@ -34,18 +34,15 @@ const clamp = (n: number, min: number, max: number) =>
 export const getOrders = async (
     req: Request,
     res: Response,
-    _next: NextFunction
+    next: NextFunction
 ) => {
     try {
-        const pageRaw = first<string | number>(req.query.page)
-        const limitRaw = first<string | number>(req.query.limit)
-
         const page = clamp(
-            parsePositiveInt(pageRaw, 1),
+            parsePositiveInt(first(req.query.page), 1),
             1,
             Number.MAX_SAFE_INTEGER
         )
-        const limit = clamp(parsePositiveInt(limitRaw, 10), 1, 10)
+        const limit = clamp(parsePositiveInt(first(req.query.limit), 10), 1, 10)
         const skip = (page - 1) * limit
 
         const sortFieldRaw = String(first(req.query.sortField) ?? 'createdAt')
@@ -130,16 +127,7 @@ export const getOrders = async (
             },
         })
     } catch (e) {
-        console.error('[getOrders:fallback]', e)
-        return res.status(200).json({
-            orders: [],
-            pagination: {
-                totalOrders: 0,
-                totalPages: 0,
-                currentPage: 1,
-                pageSize: 10,
-            },
-        })
+        return next(e)
     }
 }
 
@@ -310,7 +298,7 @@ export const updateOrder = async (
     next: NextFunction
 ) => {
     try {
-        const { status } = req.body as { status: StatusType }
+        const { status } = req.body as { status: any }
         const updatedOrder = await Order.findOneAndUpdate(
             { orderNumber: req.params.orderNumber },
             { status },
