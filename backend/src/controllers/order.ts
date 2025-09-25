@@ -78,12 +78,8 @@ export const getOrders = async (
         const search = typeof searchFirst === 'string' ? searchFirst : ''
 
         const filter: Record<string, any> = {}
-        if (
-            status &&
-            Object.values(StatusType).includes(status as StatusType)
-        ) {
+        if (status && Object.values(StatusType).includes(status as StatusType))
             filter.status = status
-        }
         if (typeof totalFrom === 'number' && !Number.isNaN(totalFrom)) {
             filter.totalAmount = {
                 ...(filter.totalAmount || {}),
@@ -102,7 +98,6 @@ export const getOrders = async (
         if (dateTo instanceof Date && !Number.isNaN(dateTo.getTime())) {
             filter.createdAt = { ...(filter.createdAt || {}), $lte: dateTo }
         }
-
         if (search) {
             const n = Number(search)
             if (!Number.isNaN(n)) filter.orderNumber = n
@@ -169,7 +164,6 @@ export const getOrdersCurrentUser = async (
         const search =
             typeof req.query.search === 'string' ? req.query.search : ''
         const filter: Record<string, any> = { customer: userId }
-
         if (search) {
             const n = Number(search)
             if (!Number.isNaN(n)) filter.orderNumber = n

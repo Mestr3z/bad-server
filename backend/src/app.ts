@@ -72,7 +72,7 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 
 const limiter = rateLimit({
     windowMs: 60_000,
-    max: 200,
+    max: 50,
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: 'Too many requests' },
@@ -111,6 +111,7 @@ app.use('/api/upload', uploadRouter)
 app.use('/upload', uploadRouter)
 app.use('/api/files', uploadRouter)
 app.use('/files', uploadRouter)
+
 app.use(serveStatic(path.join(__dirname, 'public')))
 app.use(celebrateErrors())
 app.use(errorHandler)

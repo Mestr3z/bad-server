@@ -31,8 +31,10 @@ router.get(
     clampOrdersLimit10,
     getOrders
 )
+
 router.get('/me', auth, withUser(getOrdersCurrentUser))
 router.get('/me/:orderNumber', auth, withUser(getOrderCurrentUserByNumber))
+
 router.get(
     '/:orderNumber',
     auth,
