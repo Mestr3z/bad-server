@@ -18,8 +18,6 @@ import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
 
 import routes from './routes'
-import orderRouter from './routes/order'
-import uploadRouter from './routes/upload'
 
 const app = express()
 
@@ -103,15 +101,6 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
 })
 
 app.use('/api', routes)
-app.use('/api/orders', orderRouter)
-app.use('/orders', orderRouter)
-app.use('/api/order', orderRouter)
-app.use('/order', orderRouter)
-app.use('/api/upload', uploadRouter)
-app.use('/upload', uploadRouter)
-app.use('/api/files', uploadRouter)
-app.use('/files', uploadRouter)
-
 app.use(serveStatic(path.join(__dirname, 'public')))
 app.use(celebrateErrors())
 app.use(errorHandler)
